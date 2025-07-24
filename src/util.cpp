@@ -20,7 +20,7 @@
 
 static void add_optional_bool(CLI::App* app,
                               const std::string& option_name,
-                              boost::optional<bool>& v,
+                              std::optional<bool>& v,
                               const std::string& help_text) {
   auto f = [&v](const std::string& input) {
     if (input == "true") {
@@ -28,7 +28,7 @@ static void add_optional_bool(CLI::App* app,
     } else if (input == "false") {
       v = false;
     } else if (input == "none") {
-      v = boost::none;
+      v = std::nullopt;
     } else {
       throw CLI::ConversionError(input, "optional<bool>");
     }
@@ -43,6 +43,7 @@ void Util::ParseArgs(int argc,
                      bool& use_test,
                      bool& use_ayame,
                      bool& use_sora,
+                     bool& use_pion,
                      int& log_level,
                      MomoArgs& args) {
   CLI::App app("Momo - WebRTC Native Client");
@@ -235,6 +236,8 @@ void Util::ParseArgs(int argc,
       "ayame", "Mode for working with WebRTC Signaling Server Ayame");
   auto sora_app =
       app.add_subcommand("sora", "Mode for working with WebRTC SFU Sora");
+  auto pion_app = app.add_subcommand(
+      "pion", "Mode for working with Pion SFU");
 
   test_app
       ->add_option("--document-root", args.test_document_root,
@@ -250,6 +253,28 @@ void Util::ParseArgs(int argc,
   ayame_app->add_option("--client-id", args.ayame_client_id, "Client ID");
   ayame_app->add_option("--signaling-key", args.ayame_signaling_key,
                         "Signaling key");
+
+  pion_app
+      ->add_option("--signaling-url", args.pion_signaling_url, "Signaling URL")
+      ->required();
+  
+  // Add media mode options for pion
+  auto media_mode_map = std::vector<std::pair<std::string, MomoArgs::MediaMode>>(
+      {{"none", MomoArgs::MediaMode::NONE},
+       {"sendonly", MomoArgs::MediaMode::SENDONLY},
+       {"recvonly", MomoArgs::MediaMode::RECVONLY},
+       {"sendrecv", MomoArgs::MediaMode::SENDRECV}});
+  
+  pion_app
+      ->add_option("--audio-mode", args.audio_mode,
+                   "Audio mode: none, sendonly, recvonly, sendrecv (default: sendrecv)")
+      ->transform(CLI::CheckedTransformer(media_mode_map, CLI::ignore_case));
+  
+  pion_app
+      ->add_option("--video-mode", args.video_mode,
+                   "Video mode: none, sendonly, recvonly, sendrecv (default: sendrecv)")
+      ->transform(CLI::CheckedTransformer(media_mode_map, CLI::ignore_case));
+
 
   sora_app
       ->add_option("--signaling-urls", args.sora_signaling_urls,
@@ -382,7 +407,7 @@ void Util::ParseArgs(int argc,
     exit(0);
   }
 
-  if (!test_app->parsed() && !sora_app->parsed() && !ayame_app->parsed()) {
+  if (!test_app->parsed() && !sora_app->parsed() && !ayame_app->parsed() && !pion_app->parsed()) {
     std::cout << app.help() << std::endl;
     exit(1);
   }
@@ -398,6 +423,19 @@ void Util::ParseArgs(int argc,
   if (ayame_app->parsed()) {
     use_ayame = true;
   }
+
+  if (pion_app->parsed()) {
+    use_pion = true;
+    // Handle backward compatibility for --no-audio-device and --no-video-device
+    // Only override if media modes weren't explicitly set
+    if (args.no_audio_device && !pion_app->count("--audio-mode")) {
+      args.audio_mode = MomoArgs::MediaMode::RECVONLY;  // 受信のみに変更
+    }
+    if (args.no_video_device && !pion_app->count("--video-mode")) {
+      args.video_mode = MomoArgs::MediaMode::RECVONLY;  // 受信のみに変更
+    }
+  }
+
 }
 
 void Util::ShowVideoCodecs(VideoCodecInfo info) {

@@ -37,6 +37,7 @@
 #include "ayame/ayame_client.h"
 #include "metrics/metrics_server.h"
 #include "p2p/p2p_server.h"
+#include "pion/pion_client.h"
 #include "rtc/rtc_manager.h"
 #include "sora/sora_client.h"
 #include "sora/sora_server.h"
@@ -67,9 +68,10 @@ int main(int argc, char* argv[]) {
   bool use_test = false;
   bool use_ayame = false;
   bool use_sora = false;
+  bool use_pion = false;
   int log_level = rtc::LS_NONE;
 
-  Util::ParseArgs(argc, argv, use_test, use_ayame, use_sora, log_level, args);
+  Util::ParseArgs(argc, argv, use_test, use_ayame, use_sora, use_pion, log_level, args);
 
   rtc::LogMessage::LogToDebug((rtc::LoggingSeverity)log_level);
   rtc::LogMessage::LogTimestamps();
@@ -97,7 +99,10 @@ int main(int argc, char* argv[]) {
 #endif
 
   auto capturer = ([&]() -> rtc::scoped_refptr<sora::ScalableVideoTrackSource> {
-    if (args.no_video_device) {
+    // Don't create video capturer if video sending is not needed
+    bool should_send_video = (args.video_mode == MomoArgs::MediaMode::SENDONLY || 
+                             args.video_mode == MomoArgs::MediaMode::SENDRECV);
+    if (args.no_video_device || !should_send_video) {
       return nullptr;
     }
 
@@ -164,7 +169,10 @@ int main(int argc, char* argv[]) {
 #endif
   })();
 
-  if (!capturer && !args.no_video_device) {
+  // Check if capturer creation failed when it should have succeeded
+  bool should_send_video = (args.video_mode == MomoArgs::MediaMode::SENDONLY || 
+                           args.video_mode == MomoArgs::MediaMode::SENDRECV);
+  if (!capturer && !args.no_video_device && should_send_video) {
     std::cerr << "failed to create capturer" << std::endl;
     return 1;
   }
@@ -174,6 +182,8 @@ int main(int argc, char* argv[]) {
 
   rtcm_config.no_video_device = args.no_video_device;
   rtcm_config.no_audio_device = args.no_audio_device;
+  rtcm_config.audio_mode = args.audio_mode;
+  rtcm_config.video_mode = args.video_mode;
 
   rtcm_config.fixed_resolution = args.fixed_resolution;
   rtcm_config.simulcast = args.sora_simulcast;
@@ -243,6 +253,7 @@ int main(int argc, char* argv[]) {
     std::shared_ptr<SoraClient> sora_client;
     std::shared_ptr<AyameClient> ayame_client;
     std::shared_ptr<P2PServer> p2p_server;
+    std::shared_ptr<PionClient> pion_client;
 
     MetricsServerConfig metrics_config;
     std::shared_ptr<StatsCollector> stats_collector;
@@ -330,6 +341,24 @@ int main(int argc, char* argv[]) {
 
       stats_collector = ayame_client;
     }
+
+    if (use_pion) {
+      PionClientConfig config;
+      config.insecure = args.insecure;
+      config.no_google_stun = args.no_google_stun;
+      config.client_cert = args.client_cert;
+      config.client_key = args.client_key;
+      config.signaling_url = args.pion_signaling_url;
+      config.audio_mode = args.audio_mode;
+      config.video_mode = args.video_mode;
+
+      pion_client =
+          PionClient::Create(ioc, rtc_manager.get(), std::move(config));
+      pion_client->Connect();
+
+      stats_collector = pion_client;
+    }
+
 
     if (args.metrics_port >= 0) {
       const boost::asio::ip::tcp::endpoint metrics_endpoint{

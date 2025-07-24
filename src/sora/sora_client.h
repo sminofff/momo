@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -40,9 +41,9 @@ struct SoraClientConfig {
   int spotlight_number = 0;
   int port = -1;
   bool simulcast = false;
-  boost::optional<bool> data_channel_signaling;
+  std::optional<bool> data_channel_signaling;
   int data_channel_signaling_timeout = 180;
-  boost::optional<bool> ignore_disconnect_websocket;
+  std::optional<bool> ignore_disconnect_websocket;
   int disconnect_wait_timeout = 5;
   std::string client_cert;
   std::string client_key;

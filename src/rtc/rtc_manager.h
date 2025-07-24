@@ -17,6 +17,7 @@
 #include "sora/scalable_track_source.h"
 #include "video_codec_info.h"
 #include "video_track_receiver.h"
+#include "../momo_args.h"
 
 // webrtc::PeerConnectionFactory から ConnectionContext を取り出す方法が無いので、
 // 継承して無理やり使えるようにする
@@ -53,6 +54,10 @@ struct RTCManagerConfig {
 
   bool no_video_device = false;
   bool no_audio_device = false;
+  
+  // Media mode settings
+  MomoArgs::MediaMode audio_mode = MomoArgs::MediaMode::SENDRECV;
+  MomoArgs::MediaMode video_mode = MomoArgs::MediaMode::SENDRECV;
 
   bool fixed_resolution = false;
   bool simulcast = false;
@@ -116,6 +121,7 @@ class RTCManager {
   rtc::scoped_refptr<webrtc::AudioTrackInterface> audio_track_;
   rtc::scoped_refptr<webrtc::VideoTrackInterface> video_track_;
   rtc::scoped_refptr<webrtc::RtpSenderInterface> video_sender_;
+  rtc::scoped_refptr<webrtc::RtpSenderInterface> audio_sender_;
   std::unique_ptr<rtc::Thread> network_thread_;
   std::unique_ptr<rtc::Thread> worker_thread_;
   std::unique_ptr<rtc::Thread> signaling_thread_;

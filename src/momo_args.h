@@ -2,6 +2,7 @@
 #define MOMO_ARGS_H_
 
 #include <iostream>
+#include <optional>
 #include <string>
 
 // Boost
@@ -66,9 +67,9 @@ struct MomoArgs {
   int sora_spotlight_number = 0;
   int sora_port = -1;
   bool sora_simulcast = false;
-  boost::optional<bool> sora_data_channel_signaling;
+  std::optional<bool> sora_data_channel_signaling;
   int sora_data_channel_signaling_timeout = 180;
-  boost::optional<bool> sora_ignore_disconnect_websocket;
+  std::optional<bool> sora_ignore_disconnect_websocket;
   int sora_disconnect_wait_timeout = 5;
 
   std::string test_document_root;
@@ -78,6 +79,18 @@ struct MomoArgs {
   std::string ayame_room_id;
   std::string ayame_client_id = "";
   std::string ayame_signaling_key = "";
+
+  std::string pion_signaling_url;
+
+  // Media mode definitions for audio and video
+  enum class MediaMode {
+    NONE,      // No audio/video
+    SENDONLY,  // Send only, no receive
+    RECVONLY,  // Receive only, no send
+    SENDRECV   // Send and receive (default)
+  };
+  MediaMode audio_mode = MediaMode::SENDRECV;
+  MediaMode video_mode = MediaMode::SENDRECV;
 
   bool disable_echo_cancellation = false;
   bool disable_auto_gain_control = false;

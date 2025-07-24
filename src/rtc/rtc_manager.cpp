@@ -58,7 +58,10 @@ RTCManager::RTCManager(
   webrtc::AudioDeviceModule::AudioLayer audio_layer =
       webrtc::AudioDeviceModule::kPlatformDefaultAudio;
 #endif
-  if (config_.no_audio_device) {
+  // Use dummy audio device if audio sending is not needed
+  bool should_send_audio = (config_.audio_mode == MomoArgs::MediaMode::SENDONLY || 
+                           config_.audio_mode == MomoArgs::MediaMode::SENDRECV);
+  if (config_.no_audio_device || !should_send_audio) {
     audio_layer = webrtc::AudioDeviceModule::kDummyAudio;
   }
 
@@ -159,7 +162,10 @@ RTCManager::RTCManager(
   factory_options.crypto_options.srtp.enable_gcm_crypto_suites = true;
   factory_->SetOptions(factory_options);
 
-  if (!config_.no_audio_device) {
+  // Create audio track only if we need to send audio
+  // (should_send_audio already defined above)
+  
+  if (!config_.no_audio_device && should_send_audio) {
     cricket::AudioOptions ao;
     if (config_.disable_echo_cancellation)
       ao.echo_cancellation = false;
@@ -177,7 +183,11 @@ RTCManager::RTCManager(
     }
   }
 
-  if (video_track_source && !config_.no_video_device) {
+  // Create video track only if we need to send video
+  bool should_send_video = (config_.video_mode == MomoArgs::MediaMode::SENDONLY || 
+                           config_.video_mode == MomoArgs::MediaMode::SENDRECV);
+  
+  if (video_track_source && !config_.no_video_device && should_send_video) {
     rtc::scoped_refptr<webrtc::VideoTrackSourceInterface> video_source =
         webrtc::VideoTrackSourceProxy::Create(
             signaling_thread_.get(), worker_thread_.get(), video_track_source);
@@ -293,21 +303,31 @@ void RTCManager::InitTracks(RTCConnection* conn) {
 
   std::string stream_id = Util::GenerateRandomChars();
 
-  if (audio_track_) {
-    webrtc::RTCErrorOr<rtc::scoped_refptr<webrtc::RtpSenderInterface>>
-        audio_sender = connection->AddTrack(audio_track_, {stream_id});
-    if (!audio_sender.ok()) {
-      RTC_LOG(LS_WARNING) << __FUNCTION__ << ": Cannot add audio_track_";
+  // Add audio track if available and should send
+  bool should_send_audio = (config_.audio_mode == MomoArgs::MediaMode::SENDONLY || 
+                           config_.audio_mode == MomoArgs::MediaMode::SENDRECV);
+  
+  if (audio_track_ && should_send_audio) {
+    auto audio_sender = connection->AddTrack(audio_track_, {stream_id});
+    if (audio_sender.ok()) {
+      audio_sender_ = audio_sender.value();
+      RTC_LOG(LS_INFO) << __FUNCTION__ << ": Audio track added";
+    } else {
+      RTC_LOG(LS_WARNING) << __FUNCTION__ << ": Cannot add audio track";
     }
   }
 
-  if (video_track_) {
-    webrtc::RTCErrorOr<rtc::scoped_refptr<webrtc::RtpSenderInterface>>
-        video_add_result = connection->AddTrack(video_track_, {stream_id});
-    if (video_add_result.ok()) {
-      video_sender_ = video_add_result.value();
+  // Add video track if available and should send
+  bool should_send_video = (config_.video_mode == MomoArgs::MediaMode::SENDONLY || 
+                           config_.video_mode == MomoArgs::MediaMode::SENDRECV);
+  
+  if (video_track_ && should_send_video) {
+    auto video_sender = connection->AddTrack(video_track_, {stream_id});
+    if (video_sender.ok()) {
+      video_sender_ = video_sender.value();
+      RTC_LOG(LS_INFO) << __FUNCTION__ << ": Video track added";
     } else {
-      RTC_LOG(LS_WARNING) << __FUNCTION__ << ": Cannot add video_track_";
+      RTC_LOG(LS_WARNING) << __FUNCTION__ << ": Cannot add video track";
     }
   }
 }
