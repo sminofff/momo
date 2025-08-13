@@ -284,6 +284,7 @@ target_sources(momo
     src/ayame/ayame_client.cpp
     src/p2p/p2p_server.cpp
     src/p2p/p2p_session.cpp
+    src/pion/pion_client.cpp
     src/p2p/p2p_websocket_session.cpp
     src/rtc/device_video_capturer.cpp
     src/rtc/momo_video_decoder_factory.cpp
