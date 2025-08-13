@@ -117,6 +117,7 @@ target_sources(momo
     src/momo_version.cpp
     src/p2p/p2p_server.cpp
     src/p2p/p2p_session.cpp
+    src/pion/pion_client.cpp
     src/p2p/p2p_websocket_session.cpp
     src/rtc/aligned_encoder_adapter.cpp
     src/rtc/device_video_capturer.cpp

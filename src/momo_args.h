@@ -84,6 +84,8 @@ struct MomoArgs {
   std::string ayame_client_id = "";
   std::string ayame_signaling_key = "";
 
+  std::string pion_signaling_url;
+
   bool disable_echo_cancellation = false;
   bool disable_auto_gain_control = false;
   bool disable_noise_suppression = false;

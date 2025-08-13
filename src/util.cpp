@@ -43,6 +43,7 @@ void Util::ParseArgs(int argc,
                      bool& use_test,
                      bool& use_ayame,
                      bool& use_sora,
+                     bool& use_pion,
                      int& log_level,
                      MomoArgs& args) {
   CLI::App app("Momo - WebRTC Native Client");
@@ -242,6 +243,8 @@ void Util::ParseArgs(int argc,
       "ayame", "Mode for working with WebRTC Signaling Server Ayame");
   auto sora_app =
       app.add_subcommand("sora", "Mode for working with WebRTC SFU Sora");
+  auto pion_app = app.add_subcommand(
+      "pion", "Mode for working with Pion SFU");
 
   test_app
       ->add_option("--document-root", args.test_document_root,
@@ -257,6 +260,10 @@ void Util::ParseArgs(int argc,
   ayame_app->add_option("--client-id", args.ayame_client_id, "Client ID");
   ayame_app->add_option("--signaling-key", args.ayame_signaling_key,
                         "Signaling key");
+
+  pion_app
+      ->add_option("--signaling-url", args.pion_signaling_url, "Signaling URL")
+      ->required();
 
   sora_app
       ->add_option("--signaling-urls", args.sora_signaling_urls,
@@ -389,7 +396,7 @@ void Util::ParseArgs(int argc,
     exit(0);
   }
 
-  if (!test_app->parsed() && !sora_app->parsed() && !ayame_app->parsed()) {
+  if (!test_app->parsed() && !sora_app->parsed() && !ayame_app->parsed() && !pion_app->parsed()) {
     std::cout << app.help() << std::endl;
     exit(1);
   }
@@ -404,6 +411,10 @@ void Util::ParseArgs(int argc,
 
   if (ayame_app->parsed()) {
     use_ayame = true;
+  }
+
+  if (pion_app->parsed()) {
+    use_pion = true;
   }
 }
 

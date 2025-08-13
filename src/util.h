@@ -17,6 +17,7 @@ class Util {
                         bool& use_test,
                         bool& use_ayame,
                         bool& use_sora,
+                        bool& use_pion,
                         int& log_level,
                         MomoArgs& args);
   static std::string GenerateRandomChars();
