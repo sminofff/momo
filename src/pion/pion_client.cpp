@@ -403,58 +403,9 @@ void PionClient::OnRead(boost::system::error_code ec,
     };
     ws_->WriteText(boost::json::serialize(pong_message));
   } else if (event == "peer_disconnected") {
-    RTC_LOG(LS_WARNING) << "Processing peer_disconnected event";
-    
-    // ピアが切断されたことを通知
-    // pion-sfu から削除されたトラック情報も送信される
-    const auto& data = json_message.at("data");
-    
-    // データをパース（文字列またはオブジェクトの両方に対応）
-    boost::json::value data_json;
-    if (data.is_string()) {
-      // 文字列の場合は JSON としてパース
-      data_json = boost::json::parse(data.as_string());
-    } else if (data.is_object()) {
-      // 既にオブジェクトの場合はそのまま使用
-      data_json = data;
-    } else {
-      RTC_LOG(LS_ERROR) << "Unexpected data type in peer_disconnected message";
-      return;
-    }
-    
-    // ピア ID と削除されたトラック ID を取得
-    std::string disconnected_peer_id = data_json.at("peerID").as_string().c_str();
-    const auto& removed_tracks_json = data_json.at("removedTracks").as_array();
-    
-    // 重要なイベントなので WARNING レベルで出力（デフォルトで表示される）
-    RTC_LOG(LS_WARNING) << "===== PEER DISCONNECTED EVENT =====";
-    RTC_LOG(LS_WARNING) << "Disconnected peer ID: " << disconnected_peer_id;
-    RTC_LOG(LS_WARNING) << "Number of tracks to remove: " << removed_tracks_json.size();
-    
-    // 削除されたトラック ID をログ出力
-    for (const auto& track_id_json : removed_tracks_json) {
-      std::string track_id = track_id_json.as_string().c_str();
-      RTC_LOG(LS_WARNING) << "Track marked for removal: " << track_id;
-    }
-    
-    if (removed_tracks_json.empty()) {
-      RTC_LOG(LS_WARNING) << "No tracks were marked for removal for disconnected peer";
-      RTC_LOG(LS_WARNING) << "Note: Track removal will be handled by WebRTC OnRemoveTrack callback";
-      RTC_LOG(LS_WARNING) << "Peer " << disconnected_peer_id << " has disconnected from the session";
-    } else {
-      RTC_LOG(LS_WARNING) << "====================================";
-      RTC_LOG(LS_WARNING) << "Tracks marked for removal: " << removed_tracks_json.size();
-      RTC_LOG(LS_WARNING) << "Track removal will be handled by WebRTC OnRemoveTrack callback";
-      RTC_LOG(LS_WARNING) << "====================================";
-    }
-    
-    // 実装メモ：SDP 再ネゴシエーションによるトラック削除
-    RTC_LOG(LS_WARNING) << "====================================";
-    RTC_LOG(LS_WARNING) << "IMPLEMENTATION NOTE:";
-    RTC_LOG(LS_WARNING) << "- SFU triggers SDP re-negotiation after peer disconnection";
-    RTC_LOG(LS_WARNING) << "- WebRTC OnRemoveTrack callback will be automatically called";
-    RTC_LOG(LS_WARNING) << "- Tracks will be removed from SDL renderer via the callback";
-    RTC_LOG(LS_WARNING) << "=====================================";
+    // peer_disconnected イベントは情報提供のみ
+    // 実際のトラック削除は WebRTC の OnRemoveTrack コールバックで自動的に処理される
+    RTC_LOG(LS_INFO) << "Received peer_disconnected event (track removal handled by OnRemoveTrack)";
   } else {
     // 未処理のイベントをログ出力
     RTC_LOG(LS_WARNING) << "Unhandled event received: " << event;
