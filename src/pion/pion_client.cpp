@@ -435,104 +435,26 @@ void PionClient::OnRead(boost::system::error_code ec,
     for (const auto& track_id_json : removed_tracks_json) {
       std::string track_id = track_id_json.as_string().c_str();
       RTC_LOG(LS_WARNING) << "Track marked for removal: " << track_id;
-      
-      // PeerConnection からリモートトラックを探して削除処理を試みる
-      if (connection_) {
-        auto pc = connection_->GetConnection();
-        if (pc) {
-          // すべてのトランシーバーを確認
-          for (auto transceiver : pc->GetTransceivers()) {
-            auto receiver = transceiver->receiver();
-            if (receiver) {
-              auto track = receiver->track();
-              if (track && track->id() == track_id) {
-                RTC_LOG(LS_WARNING) << "Found track to remove: " << track_id 
-                                    << " (kind: " << track->kind() << ")";
-                
-                // トラックを無効化
-                track->set_enabled(false);
-                
-                // トランシーバーの方向を recvonly から inactive に変更
-                // これによりトラックの受信を停止
-                transceiver->SetDirectionWithError(
-                    webrtc::RtpTransceiverDirection::kInactive);
-                
-                RTC_LOG(LS_WARNING) << "Track " << track_id << " has been disabled and transceiver set to inactive";
-                
-                // SDL レンダラーからトラックを削除
-                // PeerConnectionObserver の OnRemoveTrack を手動で呼び出すことで、
-                // VideoTrackReceiver::RemoveTrack が呼ばれて SDL から削除される
-                if (track->kind() == webrtc::MediaStreamTrackInterface::kVideoKind) {
-                  webrtc::VideoTrackInterface* video_track = 
-                      static_cast<webrtc::VideoTrackInterface*>(track.get());
-                  
-                  // RTCManager を通じて SDL レンダラーからトラックを削除
-                  RTC_LOG(LS_WARNING) << "Removing video track " << track_id << " from SDL renderer";
-                  manager_->RemoveVideoTrack(video_track);
-                  RTC_LOG(LS_WARNING) << "Video track " << track_id << " has been removed from SDL renderer";
-                }
-                
-                // 再ネゴシエーションが必要であることを記録
-                RTC_LOG(LS_WARNING) << "Note: Full track removal requires SDP re-negotiation";
-                break;
-              }
-            }
-          }
-        }
-      } else {
-        RTC_LOG(LS_WARNING) << "No connection available to remove track";
-      }
     }
     
     if (removed_tracks_json.empty()) {
-      RTC_LOG(LS_WARNING) << "No tracks were removed for disconnected peer";
-      RTC_LOG(LS_WARNING) << "Note: This might indicate that the peer had no tracks, or tracks were not properly registered";
-      
-      // トラックがなくても、ピアが切断されたことは重要な情報
-      // 将来的には、ここで UI の更新や接続状態の表示を更新する処理を追加
+      RTC_LOG(LS_WARNING) << "No tracks were marked for removal for disconnected peer";
+      RTC_LOG(LS_WARNING) << "Note: Track removal will be handled by WebRTC OnRemoveTrack callback";
       RTC_LOG(LS_WARNING) << "Peer " << disconnected_peer_id << " has disconnected from the session";
-      
-      // 再ネゴシエーションをトリガーするため、SFU に再接続を要求
-      // これにより、SFU から新しい offer が送信され、正しいトラック状態が反映される
-      RTC_LOG(LS_WARNING) << "Triggering re-negotiation to update track state";
-      // TODO: ここで再ネゴシエーションをトリガーする処理を追加
-      // 例: connection_->RestartIce() または特定のメッセージを SFU に送信
-      
-      // 現在のすべてのリモートトラックをログ出力（デバッグ用）
-      // また、切断されたピアのトラックを特定できない場合は、
-      // すべての無効なトラックを SDL から削除する
-      if (connection_) {
-        auto pc = connection_->GetConnection();
-        if (pc) {
-          RTC_LOG(LS_WARNING) << "Current remote tracks in PeerConnection:";
-          for (auto transceiver : pc->GetTransceivers()) {
-            auto receiver = transceiver->receiver();
-            if (receiver) {
-              auto track = receiver->track();
-              if (track) {
-                RTC_LOG(LS_WARNING) << "  - Track ID: " << track->id() 
-                                    << ", Kind: " << track->kind()
-                                    << ", Enabled: " << (track->enabled() ? "true" : "false");
-                
-                // 無効化されているビデオトラックを SDL から削除
-                if (!track->enabled() && track->kind() == webrtc::MediaStreamTrackInterface::kVideoKind) {
-                  webrtc::VideoTrackInterface* video_track = 
-                      static_cast<webrtc::VideoTrackInterface*>(track.get());
-                  RTC_LOG(LS_WARNING) << "Removing disabled video track " << track->id() << " from SDL";
-                  manager_->RemoveVideoTrack(video_track);
-                }
-              }
-            }
-          }
-        }
-      }
     } else {
       RTC_LOG(LS_WARNING) << "====================================";
-      RTC_LOG(LS_WARNING) << "NOTICE: Track removal implementation is pending.";
-      RTC_LOG(LS_WARNING) << "Tracks are removed on SFU side but not yet reflected in client rendering.";
-      RTC_LOG(LS_WARNING) << "Manual re-negotiation or reconnection may be required for proper cleanup.";
+      RTC_LOG(LS_WARNING) << "Tracks marked for removal: " << removed_tracks_json.size();
+      RTC_LOG(LS_WARNING) << "Track removal will be handled by WebRTC OnRemoveTrack callback";
       RTC_LOG(LS_WARNING) << "====================================";
     }
+    
+    // 実装メモ：SDP 再ネゴシエーションによるトラック削除
+    RTC_LOG(LS_WARNING) << "====================================";
+    RTC_LOG(LS_WARNING) << "IMPLEMENTATION NOTE:";
+    RTC_LOG(LS_WARNING) << "- SFU triggers SDP re-negotiation after peer disconnection";
+    RTC_LOG(LS_WARNING) << "- WebRTC OnRemoveTrack callback will be automatically called";
+    RTC_LOG(LS_WARNING) << "- Tracks will be removed from SDL renderer via the callback";
+    RTC_LOG(LS_WARNING) << "=====================================";
   } else {
     // 未処理のイベントをログ出力
     RTC_LOG(LS_WARNING) << "Unhandled event received: " << event;
