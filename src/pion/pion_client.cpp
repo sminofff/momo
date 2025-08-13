@@ -125,6 +125,20 @@ std::shared_ptr<RTCConnection> PionClient::CreateRTCConnection() {
   webrtc::PeerConnectionInterface::IceServer ice_server;
   ice_server.uri = "stun:stun.l.google.com:19302";
   rtc_config.servers.push_back(ice_server);
+  
+  // RTCP 設定を追加
+  // RTCP reduced-size mode を有効化（Pion SFU のデフォルト）
+  rtc_config.rtcp_mux_policy = webrtc::PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  
+  // Bundle policy を設定（全メディアストリームを単一のトランスポートにバンドル）
+  rtc_config.bundle_policy = webrtc::PeerConnectionInterface::kBundlePolicyMaxBundle;
+  
+  // ICE candidate pool size を設定
+  rtc_config.ice_candidate_pool_size = 2;
+  
+  // Continual gathering policy を設定（ICE 候補の継続的な収集）
+  rtc_config.continual_gathering_policy = 
+      webrtc::PeerConnectionInterface::ContinualGatheringPolicy::GATHER_CONTINUALLY;
 
   return manager_->CreateConnection(rtc_config, this);
 }
@@ -260,8 +274,25 @@ void PionClient::OnRead(boost::system::error_code ec,
                 std::string sdp;
                 desc->ToString(&sdp);
                 
+                // Transport-CC 拡張を SDP から削除（再ネゴシエーション時も）
+                std::string modified_sdp = sdp;
+                size_t pos = 0;
+                while ((pos = modified_sdp.find("a=extmap:", pos)) != std::string::npos) {
+                  size_t end = modified_sdp.find("\r\n", pos);
+                  if (end != std::string::npos) {
+                    std::string extmap_line = modified_sdp.substr(pos, end - pos);
+                    if (extmap_line.find("transport-wide-cc") != std::string::npos ||
+                        extmap_line.find("draft-holmer-rmcat-transport-wide-cc") != std::string::npos) {
+                      RTC_LOG(LS_INFO) << "Removing transport-cc extmap (renegotiation): " << extmap_line;
+                      modified_sdp.erase(pos, end - pos + 2);
+                      continue;
+                    }
+                  }
+                  pos = end;
+                }
+                
                 // answer を boost::asio コンテキストで送信
-                boost::asio::post(self->ioc_, [self, sdp]() {
+                boost::asio::post(self->ioc_, [self, sdp = modified_sdp]() {
                   // answer を送信（再ネゴシエーション用）
                   boost::json::value answer_obj = {
                       {"type", "answer"},
@@ -296,9 +327,43 @@ void PionClient::OnRead(boost::system::error_code ec,
             [self](webrtc::SessionDescriptionInterface* desc) {
               std::string sdp;
               desc->ToString(&sdp);
+              
+              // Transport-CC 拡張を SDP から削除
+              // a=extmap:5 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01
+              std::string modified_sdp = sdp;
+              size_t pos = 0;
+              while ((pos = modified_sdp.find("a=extmap:", pos)) != std::string::npos) {
+                size_t end = modified_sdp.find("\r\n", pos);
+                if (end != std::string::npos) {
+                  std::string extmap_line = modified_sdp.substr(pos, end - pos);
+                  if (extmap_line.find("transport-wide-cc") != std::string::npos ||
+                      extmap_line.find("draft-holmer-rmcat-transport-wide-cc") != std::string::npos) {
+                    RTC_LOG(LS_INFO) << "Removing transport-cc extmap: " << extmap_line;
+                    modified_sdp.erase(pos, end - pos + 2);  // +2 for \r\n
+                    continue;  // Don't increment pos, check same position again
+                  }
+                }
+                pos = end;
+              }
+              
+              // transport-cc RTCP feedback も削除
+              pos = 0;
+              while ((pos = modified_sdp.find("a=rtcp-fb:", pos)) != std::string::npos) {
+                size_t end = modified_sdp.find("\r\n", pos);
+                if (end != std::string::npos) {
+                  std::string rtcpfb_line = modified_sdp.substr(pos, end - pos);
+                  if (rtcpfb_line.find("transport-cc") != std::string::npos) {
+                    RTC_LOG(LS_INFO) << "Removing transport-cc rtcp-fb: " << rtcpfb_line;
+                    modified_sdp.erase(pos, end - pos + 2);  // +2 for \r\n
+                    continue;  // Don't increment pos, check same position again
+                  }
+                }
+                pos = end;
+              }
+              
               self->manager_->SetParameters();
               
-              boost::asio::post(self->ioc_, [self, sdp]() {
+              boost::asio::post(self->ioc_, [self, sdp = modified_sdp]() {
                 if (!self->connection_) {
                   return;
                 }
