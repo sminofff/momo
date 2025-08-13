@@ -38,6 +38,7 @@ void PionClient::Reset() {
   connection_ = nullptr;
   rtc_state_ = webrtc::PeerConnectionInterface::IceConnectionState::
       kIceConnectionNew;
+  ice_connected_ = false;  // Reset ICE connection flag
 }
 
 void PionClient::Connect() {
@@ -352,6 +353,12 @@ void PionClient::OnRead(boost::system::error_code ec,
       });
     });
   } else if (event == "candidate") {
+    // SFU optimization: Ignore candidates after ICE connection is established
+    if (ice_connected_.load()) {
+      RTC_LOG(LS_INFO) << "ICE already connected, ignoring received candidate";
+      return;
+    }
+    
     // ICE candidate を受信
     // data フィールドの処理（文字列またはオブジェクトの両方に対応）
     boost::json::value candidate_json;
@@ -432,6 +439,25 @@ void PionClient::OnIceConnectionStateChange(
 void PionClient::OnIceCandidate(const std::string sdp_mid,
                                 const int sdp_mlineindex,
                                 const std::string sdp) {
+  // SFU optimization: Don't send candidates after ICE connection is established
+  if (ice_connected_.load()) {
+    RTC_LOG(LS_INFO) << "ICE already connected, ignoring new candidate";
+    return;
+  }
+  
+  // Filter out unnecessary candidates for SFU
+  // Skip IPv6 link-local candidates
+  if (sdp.find("fe80::") != std::string::npos) {
+    RTC_LOG(LS_INFO) << "Skipping IPv6 link-local candidate";
+    return;
+  }
+  
+  // Skip localhost candidates
+  if (sdp.find(" 127.0.0.1 ") != std::string::npos) {
+    RTC_LOG(LS_INFO) << "Skipping localhost candidate";
+    return;
+  }
+  
   // ICE candidate を JSON 形式で作成
   // pion-sfu は JSON 文字列として data に入れることを期待
   boost::json::value candidate = {
@@ -457,7 +483,14 @@ void PionClient::DoIceConnectionStateChange(
   switch (new_state) {
     case webrtc::PeerConnectionInterface::IceConnectionState::
         kIceConnectionConnected:
+    case webrtc::PeerConnectionInterface::IceConnectionState::
+        kIceConnectionCompleted:
       retry_count_ = 0;
+      // SFU optimization: Mark ICE as connected to stop sending candidates
+      if (!ice_connected_.load()) {
+        ice_connected_ = true;
+        RTC_LOG(LS_INFO) << "🎯 ICE connected - stopping candidate generation";
+      }
       // pion-sfu は RFC 6455 ping フレームを10秒間隔で送信
       // メッセージ受信時に watchdog をリセットするため、
       // 初期値は長めに設定

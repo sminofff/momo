@@ -82,6 +82,7 @@ class PionClient : public std::enable_shared_from_this<PionClient>,
   std::unique_ptr<Websocket> ws_;
 
   std::atomic_bool destructed_ = {false};
+  std::atomic_bool ice_connected_ = {false};  // SFU optimization: track ICE connection
 
   RTCManager* manager_;
   std::shared_ptr<RTCConnection> connection_;
