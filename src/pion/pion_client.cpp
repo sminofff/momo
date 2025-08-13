@@ -209,8 +209,22 @@ void PionClient::OnRead(boost::system::error_code ec,
     // ping/pong が始まるまでの猶予を設定
     watchdog_.Enable(20);  // ping が来るまでの猶予時間
     
-    // data フィールドの中身は JSON 文字列なので、再度パースする
-    boost::json::value offer_json = boost::json::parse(json_message.at("data").as_string());
+    // data フィールドの処理
+    // SFU は初回接続時は文字列、再ネゴシエーション時はオブジェクトを送ることがある
+    boost::json::value offer_json;
+    const auto& data = json_message.at("data");
+    
+    if (data.is_string()) {
+      // 初回接続: data は JSON 文字列
+      offer_json = boost::json::parse(data.as_string());
+    } else if (data.is_object()) {
+      // 再ネゴシエーション: data は既に JSON オブジェクト
+      offer_json = data;
+    } else {
+      RTC_LOG(LS_ERROR) << "Unexpected data type in offer message";
+      return;
+    }
+    
     const std::string sdp = offer_json.at("sdp").as_string().c_str();
     
     // Offer SDP の playout-delay extension を確認
@@ -229,7 +243,42 @@ void PionClient::OnRead(boost::system::error_code ec,
       RTC_LOG(LS_INFO) << "Offer does NOT contain playout-delay extension";
     }
     
-    // RTCConnection を作成
+    // 既存の接続がある場合は再ネゴシエーション
+    if (connection_) {
+      RTC_LOG(LS_INFO) << "Existing connection found, performing renegotiation";
+      
+      // 再ネゴシエーション: 既存の接続を使用して新しい offer を設定
+      connection_->SetOffer(sdp, [self = shared_from_this()]() {
+        boost::asio::post(self->ioc_, [self]() {
+          if (!self->connection_) {
+            return;
+          }
+          
+          // answer を生成（再ネゴシエーション用）
+          self->connection_->CreateAnswer(
+              [self](webrtc::SessionDescriptionInterface* desc) {
+                std::string sdp;
+                desc->ToString(&sdp);
+                
+                // answer を boost::asio コンテキストで送信
+                boost::asio::post(self->ioc_, [self, sdp]() {
+                  // answer を送信（再ネゴシエーション用）
+                  boost::json::value answer_obj = {
+                      {"type", "answer"},
+                      {"sdp", sdp}};
+                  boost::json::value response = {
+                      {"event", "answer"},
+                      {"data", boost::json::serialize(answer_obj)}};
+                  self->ws_->WriteText(boost::json::serialize(response));
+                });
+              });
+        });
+      });
+      return;  // 再ネゴシエーション処理完了
+    }
+    
+    // 新規接続の場合: RTCConnection を作成
+    RTC_LOG(LS_INFO) << "Creating new RTCConnection for initial offer";
     connection_ = CreateRTCConnection();
     
     // offer を設定して answer を生成
@@ -292,9 +341,20 @@ void PionClient::OnRead(boost::system::error_code ec,
     });
   } else if (event == "candidate") {
     // ICE candidate を受信
-    // data フィールドの中身は JSON 文字列なので、再度パースする
-    boost::json::value candidate_json = boost::json::parse(
-        json_message.at("data").as_string().c_str());
+    // data フィールドの処理（文字列またはオブジェクトの両方に対応）
+    boost::json::value candidate_json;
+    const auto& data = json_message.at("data");
+    
+    if (data.is_string()) {
+      // data は JSON 文字列
+      candidate_json = boost::json::parse(data.as_string());
+    } else if (data.is_object()) {
+      // data は既に JSON オブジェクト
+      candidate_json = data;
+    } else {
+      RTC_LOG(LS_ERROR) << "Unexpected data type in candidate message";
+      return;
+    }
     
     // pion-sfu は sdpMid が空文字列を送ることがあるので、
     // 空の場合は sdpMLineIndex から適切な mid を決定する
