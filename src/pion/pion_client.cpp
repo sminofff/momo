@@ -212,6 +212,9 @@ void PionClient::OnRead(boost::system::error_code ec,
   // JSON パース
   boost::json::value json_message = boost::json::parse(text);
   const std::string event = json_message.at("event").as_string().c_str();
+  
+  // 受信したイベントをログ出力（デバッグ用）
+  RTC_LOG(LS_WARNING) << "Received event: " << event;
 
   if (event == "offer") {
     // サーバーから offer を受信
@@ -400,6 +403,8 @@ void PionClient::OnRead(boost::system::error_code ec,
     };
     ws_->WriteText(boost::json::serialize(pong_message));
   } else if (event == "peer_disconnected") {
+    RTC_LOG(LS_WARNING) << "Processing peer_disconnected event";
+    
     // ピアが切断されたことを通知
     // pion-sfu から削除されたトラック情報も送信される
     const auto& data = json_message.at("data");
@@ -454,6 +459,19 @@ void PionClient::OnRead(boost::system::error_code ec,
                 
                 RTC_LOG(LS_WARNING) << "Track " << track_id << " has been disabled and transceiver set to inactive";
                 
+                // SDL レンダラーからトラックを削除
+                // PeerConnectionObserver の OnRemoveTrack を手動で呼び出すことで、
+                // VideoTrackReceiver::RemoveTrack が呼ばれて SDL から削除される
+                if (track->kind() == webrtc::MediaStreamTrackInterface::kVideoKind) {
+                  webrtc::VideoTrackInterface* video_track = 
+                      static_cast<webrtc::VideoTrackInterface*>(track.get());
+                  
+                  // RTCManager を通じて SDL レンダラーからトラックを削除
+                  RTC_LOG(LS_WARNING) << "Removing video track " << track_id << " from SDL renderer";
+                  manager_->RemoveVideoTrack(video_track);
+                  RTC_LOG(LS_WARNING) << "Video track " << track_id << " has been removed from SDL renderer";
+                }
+                
                 // 再ネゴシエーションが必要であることを記録
                 RTC_LOG(LS_WARNING) << "Note: Full track removal requires SDP re-negotiation";
                 break;
@@ -468,6 +486,46 @@ void PionClient::OnRead(boost::system::error_code ec,
     
     if (removed_tracks_json.empty()) {
       RTC_LOG(LS_WARNING) << "No tracks were removed for disconnected peer";
+      RTC_LOG(LS_WARNING) << "Note: This might indicate that the peer had no tracks, or tracks were not properly registered";
+      
+      // トラックがなくても、ピアが切断されたことは重要な情報
+      // 将来的には、ここで UI の更新や接続状態の表示を更新する処理を追加
+      RTC_LOG(LS_WARNING) << "Peer " << disconnected_peer_id << " has disconnected from the session";
+      
+      // 再ネゴシエーションをトリガーするため、SFU に再接続を要求
+      // これにより、SFU から新しい offer が送信され、正しいトラック状態が反映される
+      RTC_LOG(LS_WARNING) << "Triggering re-negotiation to update track state";
+      // TODO: ここで再ネゴシエーションをトリガーする処理を追加
+      // 例: connection_->RestartIce() または特定のメッセージを SFU に送信
+      
+      // 現在のすべてのリモートトラックをログ出力（デバッグ用）
+      // また、切断されたピアのトラックを特定できない場合は、
+      // すべての無効なトラックを SDL から削除する
+      if (connection_) {
+        auto pc = connection_->GetConnection();
+        if (pc) {
+          RTC_LOG(LS_WARNING) << "Current remote tracks in PeerConnection:";
+          for (auto transceiver : pc->GetTransceivers()) {
+            auto receiver = transceiver->receiver();
+            if (receiver) {
+              auto track = receiver->track();
+              if (track) {
+                RTC_LOG(LS_WARNING) << "  - Track ID: " << track->id() 
+                                    << ", Kind: " << track->kind()
+                                    << ", Enabled: " << (track->enabled() ? "true" : "false");
+                
+                // 無効化されているビデオトラックを SDL から削除
+                if (!track->enabled() && track->kind() == webrtc::MediaStreamTrackInterface::kVideoKind) {
+                  webrtc::VideoTrackInterface* video_track = 
+                      static_cast<webrtc::VideoTrackInterface*>(track.get());
+                  RTC_LOG(LS_WARNING) << "Removing disabled video track " << track->id() << " from SDL";
+                  manager_->RemoveVideoTrack(video_track);
+                }
+              }
+            }
+          }
+        }
+      }
     } else {
       RTC_LOG(LS_WARNING) << "====================================";
       RTC_LOG(LS_WARNING) << "NOTICE: Track removal implementation is pending.";
@@ -475,6 +533,10 @@ void PionClient::OnRead(boost::system::error_code ec,
       RTC_LOG(LS_WARNING) << "Manual re-negotiation or reconnection may be required for proper cleanup.";
       RTC_LOG(LS_WARNING) << "====================================";
     }
+  } else {
+    // 未処理のイベントをログ出力
+    RTC_LOG(LS_WARNING) << "Unhandled event received: " << event;
+    RTC_LOG(LS_WARNING) << "Full message: " << text;
   }
 
   DoRead();

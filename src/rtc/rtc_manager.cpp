@@ -335,3 +335,10 @@ void RTCManager::SetParameters() {
   parameters.degradation_preference = config_.GetPriority();
   video_sender_->SetParameters(parameters);
 }
+
+void RTCManager::RemoveVideoTrack(webrtc::VideoTrackInterface* track) {
+  if (receiver_ && track) {
+    RTC_LOG(LS_INFO) << "RTCManager::RemoveVideoTrack: Removing track " << track->id();
+    receiver_->RemoveTrack(track);
+  }
+}
