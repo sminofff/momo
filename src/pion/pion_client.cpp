@@ -6,8 +6,10 @@
 
 // WebRTC
 #include <api/peer_connection_interface.h>
+#include <api/rtp_transceiver_interface.h>
 
 #include "momo_version.h"
+#include "rtc/rtc_connection.h"
 #include "ssl_verifier.h"
 #include "url_parts.h"
 #include "util.h"
@@ -90,21 +92,15 @@ void PionClient::OnWatchdogExpired() {
   } else {
     // 通常の watchdog タイムアウト
     RTC_LOG(LS_INFO) << __FUNCTION__ << " Watchdog timeout, scheduling reconnection";
-    // DEBUG: リコネクト処理をコメントアウトして exit
-    // Reset();
-    // ReconnectAfter();
-    RTC_LOG(LS_ERROR) << "DEBUG: Watchdog timeout, exiting for debug";
-    exit(1);
+    Reset();
+    ReconnectAfter();
   }
 }
 
 void PionClient::OnConnect(boost::system::error_code ec) {
   if (ec) {
     RTC_LOG(LS_ERROR) << __FUNCTION__ << " error: " << ec;
-    // DEBUG: リコネクト処理をコメントアウトして exit
-    // ReconnectAfter();
-    RTC_LOG(LS_ERROR) << "DEBUG: OnConnect error, exiting for debug";
-    exit(1);
+    ReconnectAfter();
     return;
   }
 
@@ -169,11 +165,8 @@ void PionClient::OnClose(boost::system::error_code ec) {
   // WebSocket が切断されたら遅延を入れて再接続
   // ユーザーの要望: "wsが切断されたらresetしてwsを接続しなおしてofferから始める"
   RTC_LOG(LS_INFO) << "WebSocket disconnected, scheduling reconnection";
-  // DEBUG: リコネクト処理をコメントアウトして exit
-  // Reset();
-  // ReconnectAfter();
-  RTC_LOG(LS_ERROR) << "DEBUG: WebSocket disconnected, exiting for debug";
-  exit(1);
+  Reset();
+  ReconnectAfter();
 }
 
 void PionClient::DoRead() {
@@ -196,21 +189,15 @@ void PionClient::OnRead(boost::system::error_code ec,
   // WebSocket が closed なエラーが返ってきた場合
   if (ec == boost::beast::websocket::error::closed) {
     RTC_LOG(LS_INFO) << "WebSocket closed, scheduling reconnection";
-    // DEBUG: リコネクト処理をコメントアウトして exit
-    // Reset();
-    // ReconnectAfter();
-    RTC_LOG(LS_ERROR) << "DEBUG: WebSocket closed, exiting for debug";
-    exit(1);
+    Reset();
+    ReconnectAfter();
     return;
   }
 
   if (ec) {
     RTC_LOG(LS_ERROR) << __FUNCTION__ << " error: " << ec;
-    // DEBUG: リコネクト処理をコメントアウトして exit
-    // Reset();
-    // ReconnectAfter();
-    RTC_LOG(LS_ERROR) << "DEBUG: OnRead error, exiting for debug";
-    exit(1);
+    Reset();
+    ReconnectAfter();
     return;
   }
 
@@ -434,34 +421,59 @@ void PionClient::OnRead(boost::system::error_code ec,
     std::string disconnected_peer_id = data_json.at("peerID").as_string().c_str();
     const auto& removed_tracks_json = data_json.at("removedTracks").as_array();
     
-    RTC_LOG(LS_INFO) << "Peer disconnected notification received: " << disconnected_peer_id
-                     << " with " << removed_tracks_json.size() << " removed tracks";
+    // 重要なイベントなので WARNING レベルで出力（デフォルトで表示される）
+    RTC_LOG(LS_WARNING) << "===== PEER DISCONNECTED EVENT =====";
+    RTC_LOG(LS_WARNING) << "Disconnected peer ID: " << disconnected_peer_id;
+    RTC_LOG(LS_WARNING) << "Number of tracks to remove: " << removed_tracks_json.size();
     
     // 削除されたトラック ID をログ出力
     for (const auto& track_id_json : removed_tracks_json) {
       std::string track_id = track_id_json.as_string().c_str();
-      RTC_LOG(LS_INFO) << "Track to be removed: " << track_id;
+      RTC_LOG(LS_WARNING) << "Track marked for removal: " << track_id;
       
-      // TODO: ここで実際のトラック削除処理を実装
-      // 現在の momo の実装では、トラック ID からトラックオブジェクトを
-      // 取得する仕組みがないため、以下のような実装が必要：
-      // 
-      // 1. RTCConnection にトラック ID でトラックを検索する機能を追加
-      // 2. 該当するトラックを PeerConnection から削除
-      // 3. PeerConnectionObserver::OnRemoveTrack を呼び出して
-      //    ビデオレンダリングからトラックを除外
-      //
-      // 例:
-      // if (connection_) {
-      //   connection_->RemoveRemoteTrackById(track_id);
-      // }
+      // PeerConnection からリモートトラックを探して削除処理を試みる
+      if (connection_) {
+        auto pc = connection_->GetConnection();
+        if (pc) {
+          // すべてのトランシーバーを確認
+          for (auto transceiver : pc->GetTransceivers()) {
+            auto receiver = transceiver->receiver();
+            if (receiver) {
+              auto track = receiver->track();
+              if (track && track->id() == track_id) {
+                RTC_LOG(LS_WARNING) << "Found track to remove: " << track_id 
+                                    << " (kind: " << track->kind() << ")";
+                
+                // トラックを無効化
+                track->set_enabled(false);
+                
+                // トランシーバーの方向を recvonly から inactive に変更
+                // これによりトラックの受信を停止
+                transceiver->SetDirectionWithError(
+                    webrtc::RtpTransceiverDirection::kInactive);
+                
+                RTC_LOG(LS_WARNING) << "Track " << track_id << " has been disabled and transceiver set to inactive";
+                
+                // 再ネゴシエーションが必要であることを記録
+                RTC_LOG(LS_WARNING) << "Note: Full track removal requires SDP re-negotiation";
+                break;
+              }
+            }
+          }
+        }
+      } else {
+        RTC_LOG(LS_WARNING) << "No connection available to remove track";
+      }
     }
     
     if (removed_tracks_json.empty()) {
-      RTC_LOG(LS_INFO) << "No tracks were removed for disconnected peer";
+      RTC_LOG(LS_WARNING) << "No tracks were removed for disconnected peer";
     } else {
-      RTC_LOG(LS_WARNING) << "Track removal implementation is pending. "
-                          << "Tracks are removed on SFU side but not yet reflected in client rendering";
+      RTC_LOG(LS_WARNING) << "====================================";
+      RTC_LOG(LS_WARNING) << "NOTICE: Track removal implementation is pending.";
+      RTC_LOG(LS_WARNING) << "Tracks are removed on SFU side but not yet reflected in client rendering.";
+      RTC_LOG(LS_WARNING) << "Manual re-negotiation or reconnection may be required for proper cleanup.";
+      RTC_LOG(LS_WARNING) << "====================================";
     }
   }
 
@@ -520,21 +532,15 @@ void PionClient::DoIceConnectionStateChange(
         kIceConnectionDisconnected:
       // 一時的な切断の場合は遅延を入れて再接続
       RTC_LOG(LS_WARNING) << "ICE disconnected, scheduling reconnection";
-      // DEBUG: リコネクト処理をコメントアウトして exit
-      // Reset();
-      // ReconnectAfter();
-      RTC_LOG(LS_ERROR) << "DEBUG: ICE disconnected, exiting for debug";
-      exit(1);
+      Reset();
+      ReconnectAfter();
       break;
     case webrtc::PeerConnectionInterface::IceConnectionState::
         kIceConnectionFailed:
       // 失敗時も遅延を入れて再接続
       RTC_LOG(LS_ERROR) << "ICE connection failed, scheduling reconnection";
-      // DEBUG: リコネクト処理をコメントアウトして exit
-      // Reset();
-      // ReconnectAfter();
-      RTC_LOG(LS_ERROR) << "DEBUG: ICE connection failed, exiting for debug";
-      exit(1);
+      Reset();
+      ReconnectAfter();
       break;
     default:
       break;
