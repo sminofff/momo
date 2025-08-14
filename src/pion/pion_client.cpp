@@ -35,6 +35,7 @@ PionClient::~PionClient() {
 }
 
 void PionClient::Reset() {
+  watchdog_.Disable();
   connection_ = nullptr;
   rtc_state_ = webrtc::PeerConnectionInterface::IceConnectionState::
       kIceConnectionNew;
@@ -44,7 +45,7 @@ void PionClient::Reset() {
 void PionClient::Connect() {
   RTC_LOG(LS_INFO) << __FUNCTION__;
 
-  watchdog_.Enable(30);
+  watchdog_.Enable(WATCHDOG_INITIAL_TIMEOUT);
 
   // URL からプロトコルを判定
   URLParts parts;
@@ -67,9 +68,9 @@ void PionClient::Connect() {
 
 void PionClient::ReconnectAfter() {
   // 再接続の間隔を設定（指数バックオフ）
-  int interval = 5 * (retry_count_ + 1);
-  if (interval > 30) {
-    interval = 30;  // 最大30秒
+  int interval = RECONNECT_INTERVAL_BASE * (retry_count_ + 1);
+  if (interval > RECONNECT_INTERVAL_MAX) {
+    interval = RECONNECT_INTERVAL_MAX;
   }
   
   RTC_LOG(LS_INFO) << __FUNCTION__ << " Reconnecting after " << interval << " seconds";
@@ -82,20 +83,10 @@ void PionClient::ReconnectAfter() {
 void PionClient::OnWatchdogExpired() {
   RTC_LOG(LS_WARNING) << __FUNCTION__;
 
-  // Watchdog タイムアウト時の処理
-  // 接続中の場合は再接続、再接続待機中の場合は再接続実行
-  if (rtc_state_ == webrtc::PeerConnectionInterface::IceConnectionState::
-                       kIceConnectionNew) {
-    // 再接続タイマーとして使われた場合
-    RTC_LOG(LS_INFO) << __FUNCTION__ << " Executing reconnection";
-    Reset();
-    Connect();
-  } else {
-    // 通常の watchdog タイムアウト
-    RTC_LOG(LS_INFO) << __FUNCTION__ << " Watchdog timeout, scheduling reconnection";
-    Reset();
-    ReconnectAfter();
-  }
+  // Watchdog タイムアウト時は再接続を実行
+  RTC_LOG(LS_INFO) << __FUNCTION__ << " reconnecting...";
+  Reset();
+  Connect();
 }
 
 void PionClient::OnConnect(boost::system::error_code ec) {
@@ -107,17 +98,9 @@ void PionClient::OnConnect(boost::system::error_code ec) {
 
   RTC_LOG(LS_INFO) << __FUNCTION__ << " connected";
 
-  // SFU の場合、接続後はサーバーからの offer を待つだけ
-  // ayame のような register 送信は不要
   retry_count_ = 0;
-  
-  // pion-sfu は自動的に offer を送ってくるため、
-  // すぐに DoRead() で待機
   DoRead();
-  
-  // offer 受信のタイムアウト設定
-  // pion-sfu は接続後すぐに offer を送信するはず
-  watchdog_.Enable(15);  // 15秒以内に offer が来なければ再接続
+  watchdog_.Enable(WATCHDOG_OFFER_TIMEOUT);
 }
 
 std::shared_ptr<RTCConnection> PionClient::CreateRTCConnection() {
@@ -204,11 +187,13 @@ void PionClient::OnRead(boost::system::error_code ec,
 
   RTC_LOG(LS_INFO) << __FUNCTION__ << ": text=" << text;
   
+  // 詳細ログ: 受信したメッセージを VERBOSE レベルで出力
+  RTC_LOG(LS_VERBOSE) << "📥 Received WebSocket message: " << text;
+  
   // メッセージを受信したら watchdog をリセット
   // pion-sfu は RFC 6455 ping フレームを送信するが、
   // データメッセージも送信するので、いずれかを受信したら接続は生きていると判断
-  // WebSocket が生きている限りは接続を維持
-  watchdog_.Enable(45);  // 45秒（ping間隔10秒の4倍以上の余裕）
+  watchdog_.Enable(WATCHDOG_KEEPALIVE_TIMEOUT);
 
   // JSON パース
   boost::json::value json_message = boost::json::parse(text);
@@ -222,38 +207,21 @@ void PionClient::OnRead(boost::system::error_code ec,
     RTC_LOG(LS_INFO) << __FUNCTION__ << ": Received offer from server";
     
     // data フィールドの処理
-    // SFU は初回接続時は文字列、再ネゴシエーション時はオブジェクトを送ることがある
     boost::json::value offer_json;
     const auto& data = json_message.at("data");
     
     if (data.is_string()) {
-      // 初回接続: data は JSON 文字列
       offer_json = boost::json::parse(data.as_string());
     } else if (data.is_object()) {
-      // 再ネゴシエーション: data は既に JSON オブジェクト
       offer_json = data;
     } else {
       RTC_LOG(LS_ERROR) << "Unexpected data type in offer message";
+      // DoRead() を呼ぶために return せずに処理を続ける
+      DoRead();
       return;
     }
     
     const std::string sdp = offer_json.at("sdp").as_string().c_str();
-    
-    // Offer SDP の playout-delay extension を確認
-    if (sdp.find("playout-delay") != std::string::npos) {
-      RTC_LOG(LS_INFO) << "Offer contains playout-delay extension";
-      // extmap 行を抽出して表示
-      size_t pos = 0;
-      while ((pos = sdp.find("a=extmap:", pos)) != std::string::npos) {
-        size_t end = sdp.find("\r\n", pos);
-        if (end != std::string::npos) {
-          RTC_LOG(LS_INFO) << "Offer extmap: " << sdp.substr(pos, end - pos);
-        }
-        pos = end;
-      }
-    } else {
-      RTC_LOG(LS_INFO) << "Offer does NOT contain playout-delay extension";
-    }
     
     // 既存の接続がある場合は再ネゴシエーション
     if (connection_) {
@@ -286,25 +254,24 @@ void PionClient::OnRead(boost::system::error_code ec,
               });
         });
       });
-      return;  // 再ネゴシエーション処理完了
-    }
-    
-    // 新規接続の場合: RTCConnection を作成
-    RTC_LOG(LS_INFO) << "Creating new RTCConnection for initial offer";
-    connection_ = CreateRTCConnection();
-    
-    // offer を設定して answer を生成
-    connection_->SetOffer(sdp, [self = shared_from_this()]() {
-      boost::asio::post(self->ioc_, [self]() {
-        if (!self->connection_) {
-          return;
-        }
+      // DoRead() を呼ぶために return しない
+    } else {
+      // 新規接続の場合: RTCConnection を作成
+      RTC_LOG(LS_INFO) << "Creating new RTCConnection for initial offer";
+      connection_ = CreateRTCConnection();
+      
+      // offer を設定して answer を生成
+      connection_->SetOffer(sdp, [self = shared_from_this()]() {
+        boost::asio::post(self->ioc_, [self]() {
+          if (!self->connection_) {
+            return;
+          }
 
-        // トラックを初期化
-        self->manager_->InitTracks(self->connection_.get());
+          // トラックを初期化
+          self->manager_->InitTracks(self->connection_.get());
 
-        // answer を生成
-        self->connection_->CreateAnswer(
+          // answer を生成
+          self->connection_->CreateAnswer(
             [self](webrtc::SessionDescriptionInterface* desc) {
               std::string sdp;
               desc->ToString(&sdp);
@@ -316,27 +283,6 @@ void PionClient::OnRead(boost::system::error_code ec,
                   return;
                 }
 
-                // Answer SDP の playout-delay extension を確認
-                if (sdp.find("playout-delay") != std::string::npos) {
-                  RTC_LOG(LS_INFO) << "Answer contains playout-delay extension";
-                } else {
-                  RTC_LOG(LS_INFO) << "Answer does NOT contain playout-delay extension";
-                  // Answer の extmap 行を全て表示
-                  size_t pos = 0;
-                  int extmap_count = 0;
-                  while ((pos = sdp.find("a=extmap:", pos)) != std::string::npos) {
-                    size_t end = sdp.find("\r\n", pos);
-                    if (end != std::string::npos) {
-                      RTC_LOG(LS_INFO) << "Answer extmap: " << sdp.substr(pos, end - pos);
-                      extmap_count++;
-                    }
-                    pos = end;
-                  }
-                  if (extmap_count == 0) {
-                    RTC_LOG(LS_INFO) << "Answer contains NO extmap lines";
-                  }
-                }
-                
                 // pion-sfu 形式で answer を送信
                 // data フィールドには JSON オブジェクトを文字列化して入れる
                 boost::json::value answer_obj = {
@@ -350,64 +296,65 @@ void PionClient::OnRead(boost::system::error_code ec,
                 self->ws_->WriteText(boost::json::serialize(response));
               });
             });
+        });
       });
-    });
+    }
   } else if (event == "candidate") {
     // SFU optimization: Ignore candidates after ICE connection is established
     if (ice_connected_.load()) {
       RTC_LOG(LS_INFO) << "ICE already connected, ignoring received candidate";
-      return;
-    }
-    
-    // ICE candidate を受信
-    // data フィールドの処理（文字列またはオブジェクトの両方に対応）
-    boost::json::value candidate_json;
-    const auto& data = json_message.at("data");
-    
-    if (data.is_string()) {
-      // data は JSON 文字列
-      candidate_json = boost::json::parse(data.as_string());
-    } else if (data.is_object()) {
-      // data は既に JSON オブジェクト
-      candidate_json = data;
+      // DoRead() を呼ぶために return しない
     } else {
-      RTC_LOG(LS_ERROR) << "Unexpected data type in candidate message";
-      return;
-    }
-    
-    // pion-sfu は sdpMid が空文字列を送ることがあるので、
-    // 空の場合は sdpMLineIndex から適切な mid を決定する
-    std::string sdp_mid;
-    auto mid_it = candidate_json.as_object().find("sdpMid");
-    if (mid_it != candidate_json.as_object().end() && 
-        !mid_it->value().is_null() && 
-        !mid_it->value().as_string().empty()) {
-      sdp_mid = mid_it->value().as_string().c_str();
-    }
-    
-    const int sdp_mlineindex = candidate_json.at("sdpMLineIndex").to_number<int>();
-    const std::string candidate = candidate_json.at("candidate").as_string().c_str();
-    
-    // connection_ が存在する場合のみ ICE candidate を追加
-    if (connection_) {
-      // sdp_mid が空の場合は、sdpMLineIndex に基づいて mid を設定
-      // 0 = audio (mid="0"), 1 = video (mid="1")
-      if (sdp_mid.empty()) {
-        sdp_mid = std::to_string(sdp_mlineindex);
+      // ICE candidate を受信
+      boost::json::value candidate_json;
+      const auto& data = json_message.at("data");
+      
+      if (data.is_string()) {
+        candidate_json = boost::json::parse(data.as_string());
+      } else if (data.is_object()) {
+        candidate_json = data;
+      } else {
+        RTC_LOG(LS_ERROR) << "Unexpected data type in candidate message";
+        // DoRead() を呼ぶために return せずに処理を続ける
+        DoRead();
+        return;
       }
-      connection_->AddIceCandidate(sdp_mid, sdp_mlineindex, candidate);
-    } else {
-      RTC_LOG(LS_WARNING) << "Received ICE candidate before connection is ready";
+      
+      // pion-sfu は sdpMid が空文字列を送ることがあるので、
+      // 空の場合は sdpMLineIndex から適切な mid を決定する
+      std::string sdp_mid;
+      auto mid_it = candidate_json.as_object().find("sdpMid");
+      if (mid_it != candidate_json.as_object().end() && 
+          !mid_it->value().is_null() && 
+          !mid_it->value().as_string().empty()) {
+        sdp_mid = mid_it->value().as_string().c_str();
+      }
+      
+      const int sdp_mlineindex = candidate_json.at("sdpMLineIndex").to_number<int>();
+      const std::string candidate = candidate_json.at("candidate").as_string().c_str();
+      
+      // connection_ が存在する場合のみ ICE candidate を追加
+      if (connection_) {
+        // sdp_mid が空の場合は、sdpMLineIndex に基づいて mid を設定
+        // 0 = audio (mid="0"), 1 = video (mid="1")
+        if (sdp_mid.empty()) {
+          sdp_mid = std::to_string(sdp_mlineindex);
+        }
+        connection_->AddIceCandidate(sdp_mid, sdp_mlineindex, candidate);
+      } else {
+        RTC_LOG(LS_WARNING) << "Received ICE candidate before connection is ready";
+      }
     }
   } else if (event == "ping") {
     // JSON ping を受信したら pong を返す
-    RTC_LOG(LS_INFO) << "Received JSON ping from pion-sfu, sending pong";
+    RTC_LOG(LS_INFO) << "🏓 Received ping from pion-sfu";
     
     // pong を送信
     boost::json::value pong_message = {
         {"event", "pong"},
         {"data", ""}
     };
+    RTC_LOG(LS_INFO) << "🏓 Sending pong to pion-sfu";
     ws_->WriteText(boost::json::serialize(pong_message));
   } else if (event == "peer_disconnected") {
     // peer_disconnected イベントは情報提供のみ
@@ -445,26 +392,12 @@ void PionClient::OnIceCandidate(const std::string sdp_mid,
     return;
   }
   
-  // Filter out unnecessary candidates for SFU
-  // Skip IPv6 link-local candidates
-  if (sdp.find("fe80::") != std::string::npos) {
-    RTC_LOG(LS_INFO) << "Skipping IPv6 link-local candidate";
-    return;
-  }
-  
-  // Skip localhost candidates
-  if (sdp.find(" 127.0.0.1 ") != std::string::npos) {
-    RTC_LOG(LS_INFO) << "Skipping localhost candidate";
-    return;
-  }
-  
   // ICE candidate を JSON 形式で作成
   // pion-sfu は JSON 文字列として data に入れることを期待
   boost::json::value candidate = {
       {"sdpMid", sdp_mid},
       {"sdpMLineIndex", sdp_mlineindex},
-      {"candidate", sdp},
-      {"usernameFragment", nullptr}  // pion-sfu 互換性のため
+      {"candidate", sdp}
   };
   
   // pion-sfu 形式で送信
@@ -494,7 +427,7 @@ void PionClient::DoIceConnectionStateChange(
       // pion-sfu は RFC 6455 ping フレームを10秒間隔で送信
       // メッセージ受信時に watchdog をリセットするため、
       // 初期値は長めに設定
-      watchdog_.Enable(45);  // 45秒
+      watchdog_.Enable(WATCHDOG_ICE_CONNECTED);
       break;
     case webrtc::PeerConnectionInterface::IceConnectionState::
         kIceConnectionDisconnected:
