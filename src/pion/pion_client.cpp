@@ -357,10 +357,6 @@ void PionClient::OnRead(boost::system::error_code ec,
     };
     RTC_LOG(LS_INFO) << "Sending pong to pion-sfu";
     ws_->WriteText(boost::json::serialize(pong_message));
-  } else if (event == "peer_disconnected") {
-    // peer_disconnected イベントは情報提供のみ
-    // 実際のトラック削除は WebRTC の OnRemoveTrack コールバックで自動的に処理される
-    RTC_LOG(LS_INFO) << "Received peer_disconnected event (track removal handled by OnRemoveTrack)";
   } else {
     // 未処理のイベントをログ出力
     RTC_LOG(LS_WARNING) << "Unhandled event received: " << event;
