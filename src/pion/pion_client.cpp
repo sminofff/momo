@@ -45,7 +45,7 @@ void PionClient::Reset() {
 void PionClient::Connect() {
   RTC_LOG(LS_INFO) << __FUNCTION__;
 
-  watchdog_.Enable(WATCHDOG_INITIAL_TIMEOUT);
+  watchdog_.Enable(kWatchdogInitialTimeout);
 
   // URL からプロトコルを判定
   URLParts parts;
@@ -68,9 +68,9 @@ void PionClient::Connect() {
 
 void PionClient::ReconnectAfter() {
   // 再接続の間隔を設定（指数バックオフ）
-  int interval = RECONNECT_INTERVAL_BASE * (retry_count_ + 1);
-  if (interval > RECONNECT_INTERVAL_MAX) {
-    interval = RECONNECT_INTERVAL_MAX;
+  int interval = kReconnectIntervalBase * (retry_count_ + 1);
+  if (interval > kReconnectIntervalMax) {
+    interval = kReconnectIntervalMax;
   }
   
   RTC_LOG(LS_INFO) << __FUNCTION__ << " Reconnecting after " << interval << " seconds";
@@ -100,7 +100,7 @@ void PionClient::OnConnect(boost::system::error_code ec) {
 
   retry_count_ = 0;
   DoRead();
-  watchdog_.Enable(WATCHDOG_OFFER_TIMEOUT);
+  watchdog_.Enable(kWatchdogOfferTimeout);
 }
 
 std::shared_ptr<RTCConnection> PionClient::CreateRTCConnection() {
@@ -188,12 +188,12 @@ void PionClient::OnRead(boost::system::error_code ec,
   RTC_LOG(LS_INFO) << __FUNCTION__ << ": text=" << text;
   
   // 詳細ログ: 受信したメッセージを VERBOSE レベルで出力
-  RTC_LOG(LS_VERBOSE) << "📥 Received WebSocket message: " << text;
+  RTC_LOG(LS_VERBOSE) << "Received WebSocket message: " << text;
   
   // メッセージを受信したら watchdog をリセット
   // pion-sfu は RFC 6455 ping フレームを送信するが、
   // データメッセージも送信するので、いずれかを受信したら接続は生きていると判断
-  watchdog_.Enable(WATCHDOG_KEEPALIVE_TIMEOUT);
+  watchdog_.Enable(kWatchdogKeepaliveTimeout);
 
   // JSON パース
   boost::json::value json_message = boost::json::parse(text);
@@ -303,58 +303,59 @@ void PionClient::OnRead(boost::system::error_code ec,
     // SFU optimization: Ignore candidates after ICE connection is established
     if (ice_connected_.load()) {
       RTC_LOG(LS_INFO) << "ICE already connected, ignoring received candidate";
-      // DoRead() を呼ぶために return しない
+      DoRead();
+      return;
+    }
+    
+    // ICE candidate を受信
+    boost::json::value candidate_json;
+    const auto& data = json_message.at("data");
+    
+    if (data.is_string()) {
+      candidate_json = boost::json::parse(data.as_string());
+    } else if (data.is_object()) {
+      candidate_json = data;
     } else {
-      // ICE candidate を受信
-      boost::json::value candidate_json;
-      const auto& data = json_message.at("data");
-      
-      if (data.is_string()) {
-        candidate_json = boost::json::parse(data.as_string());
-      } else if (data.is_object()) {
-        candidate_json = data;
-      } else {
-        RTC_LOG(LS_ERROR) << "Unexpected data type in candidate message";
-        // DoRead() を呼ぶために return せずに処理を続ける
-        DoRead();
-        return;
+      RTC_LOG(LS_ERROR) << "Unexpected data type in candidate message";
+      // DoRead() を呼ぶために return せずに処理を続ける
+      DoRead();
+      return;
+    }
+    
+    // pion-sfu は sdpMid が空文字列を送ることがあるので、
+    // 空の場合は sdpMLineIndex から適切な mid を決定する
+    std::string sdp_mid;
+    auto mid_it = candidate_json.as_object().find("sdpMid");
+    if (mid_it != candidate_json.as_object().end() && 
+        !mid_it->value().is_null() && 
+        !mid_it->value().as_string().empty()) {
+      sdp_mid = mid_it->value().as_string().c_str();
+    }
+    
+    const int sdp_mlineindex = candidate_json.at("sdpMLineIndex").to_number<int>();
+    const std::string candidate = candidate_json.at("candidate").as_string().c_str();
+    
+    // connection_ が存在する場合のみ ICE candidate を追加
+    if (connection_) {
+      // sdp_mid が空の場合は、sdpMLineIndex に基づいて mid を設定
+      // 0 = audio (mid="0"), 1 = video (mid="1")
+      if (sdp_mid.empty()) {
+        sdp_mid = std::to_string(sdp_mlineindex);
       }
-      
-      // pion-sfu は sdpMid が空文字列を送ることがあるので、
-      // 空の場合は sdpMLineIndex から適切な mid を決定する
-      std::string sdp_mid;
-      auto mid_it = candidate_json.as_object().find("sdpMid");
-      if (mid_it != candidate_json.as_object().end() && 
-          !mid_it->value().is_null() && 
-          !mid_it->value().as_string().empty()) {
-        sdp_mid = mid_it->value().as_string().c_str();
-      }
-      
-      const int sdp_mlineindex = candidate_json.at("sdpMLineIndex").to_number<int>();
-      const std::string candidate = candidate_json.at("candidate").as_string().c_str();
-      
-      // connection_ が存在する場合のみ ICE candidate を追加
-      if (connection_) {
-        // sdp_mid が空の場合は、sdpMLineIndex に基づいて mid を設定
-        // 0 = audio (mid="0"), 1 = video (mid="1")
-        if (sdp_mid.empty()) {
-          sdp_mid = std::to_string(sdp_mlineindex);
-        }
-        connection_->AddIceCandidate(sdp_mid, sdp_mlineindex, candidate);
-      } else {
-        RTC_LOG(LS_WARNING) << "Received ICE candidate before connection is ready";
-      }
+      connection_->AddIceCandidate(sdp_mid, sdp_mlineindex, candidate);
+    } else {
+      RTC_LOG(LS_WARNING) << "Received ICE candidate before connection is ready";
     }
   } else if (event == "ping") {
     // JSON ping を受信したら pong を返す
-    RTC_LOG(LS_INFO) << "🏓 Received ping from pion-sfu";
+    RTC_LOG(LS_INFO) << "Received ping from pion-sfu";
     
     // pong を送信
     boost::json::value pong_message = {
         {"event", "pong"},
         {"data", ""}
     };
-    RTC_LOG(LS_INFO) << "🏓 Sending pong to pion-sfu";
+    RTC_LOG(LS_INFO) << "Sending pong to pion-sfu";
     ws_->WriteText(boost::json::serialize(pong_message));
   } else if (event == "peer_disconnected") {
     // peer_disconnected イベントは情報提供のみ
@@ -422,12 +423,12 @@ void PionClient::DoIceConnectionStateChange(
       // SFU optimization: Mark ICE as connected to stop sending candidates
       if (!ice_connected_.load()) {
         ice_connected_ = true;
-        RTC_LOG(LS_INFO) << "🎯 ICE connected - stopping candidate generation";
+        RTC_LOG(LS_INFO) << "ICE connected - stopping candidate generation";
       }
       // pion-sfu は RFC 6455 ping フレームを10秒間隔で送信
       // メッセージ受信時に watchdog をリセットするため、
       // 初期値は長めに設定
-      watchdog_.Enable(WATCHDOG_ICE_CONNECTED);
+      watchdog_.Enable(kWatchdogIceConnected);
       break;
     case webrtc::PeerConnectionInterface::IceConnectionState::
         kIceConnectionDisconnected:
