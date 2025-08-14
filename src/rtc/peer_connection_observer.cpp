@@ -1,5 +1,6 @@
 #include "peer_connection_observer.h"
 
+#include <algorithm>
 #include <iostream>
 
 // WebRTC
@@ -76,6 +77,32 @@ void PeerConnectionObserver::OnRemoveTrack(
                        }),
         video_tracks_.end());
     receiver_->RemoveTrack(video_track);
+  }
+}
+
+void PeerConnectionObserver::RemoveTrackById(const std::string& track_id) {
+  if (receiver_ == nullptr)
+    return;
+    
+  RTC_LOG(LS_INFO) << "Removing track by ID: " << track_id;
+  
+  // トラックIDでマッチするトラックを探す
+  auto it = std::find_if(video_tracks_.begin(), video_tracks_.end(),
+                        [&track_id](const webrtc::VideoTrackInterface* track) {
+                          return track->id() == track_id;
+                        });
+  
+  if (it != video_tracks_.end()) {
+    webrtc::VideoTrackInterface* video_track = *it;
+    RTC_LOG(LS_INFO) << "Found and removing track: " << track_id;
+    
+    // レシーバーから削除
+    receiver_->RemoveTrack(video_track);
+    
+    // リストから削除
+    video_tracks_.erase(it);
+  } else {
+    RTC_LOG(LS_WARNING) << "Track not found: " << track_id;
   }
 }
 

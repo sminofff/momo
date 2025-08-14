@@ -17,6 +17,7 @@ class PeerConnectionObserver : public webrtc::PeerConnectionObserver {
   ~PeerConnectionObserver();
 
   RTCDataManager* DataManager();
+  void RemoveTrackById(const std::string& track_id);
 
  private:
   void OnSignalingChange(

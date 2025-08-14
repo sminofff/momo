@@ -357,6 +357,35 @@ void PionClient::OnRead(boost::system::error_code ec,
     };
     RTC_LOG(LS_INFO) << "Sending pong to pion-sfu";
     ws_->WriteText(boost::json::serialize(pong_message));
+  } else if (event == "track_removed") {
+    // トラック削除通知を受信
+    RTC_LOG(LS_INFO) << "Received track_removed notification from pion-sfu";
+    
+    // data フィールドから削除されたトラックIDを取得
+    try {
+      boost::json::value track_removal_json;
+      const auto& data = json_message.at("data");
+      
+      if (data.is_string()) {
+        track_removal_json = boost::json::parse(data.as_string());
+      } else {
+        track_removal_json = data;
+      }
+      
+      const auto& track_ids = track_removal_json.at("trackIds").as_array();
+      
+      for (const auto& track_id : track_ids) {
+        std::string removed_track_id = track_id.as_string().c_str();
+        RTC_LOG(LS_INFO) << "Track removed: " << removed_track_id;
+        
+        // RTCConnection に通知してトラックを削除
+        if (connection_) {
+          connection_->RemoveRemoteTrack(removed_track_id);
+        }
+      }
+    } catch (const std::exception& e) {
+      RTC_LOG(LS_ERROR) << "Failed to parse track_removed message: " << e.what();
+    }
   } else {
     // 未処理のイベントをログ出力
     RTC_LOG(LS_WARNING) << "Unhandled event received: " << event;

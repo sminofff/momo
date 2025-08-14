@@ -40,6 +40,7 @@ class RTCConnection {
   bool SetVideoEnabled(bool enabled);
   bool IsAudioEnabled();
   bool IsVideoEnabled();
+  void RemoveRemoteTrack(const std::string& track_id);
 
   void GetStats(
       std::function<void(
