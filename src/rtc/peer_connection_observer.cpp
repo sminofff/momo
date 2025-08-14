@@ -62,26 +62,13 @@ void PeerConnectionObserver::OnTrack(
 
 void PeerConnectionObserver::OnRemoveTrack(
     webrtc::scoped_refptr<webrtc::RtpReceiverInterface> receiver) {
-  RTC_LOG(LS_WARNING) << "===== OnRemoveTrack CALLED (Native WebRTC Callback) =====";
-  
-  if (receiver_ == nullptr) {
-    RTC_LOG(LS_WARNING) << "OnRemoveTrack: receiver_ is null, returning";
+  if (receiver_ == nullptr)
     return;
-  }
-  
   webrtc::scoped_refptr<webrtc::MediaStreamTrackInterface> track =
       receiver->track();
-  
-  RTC_LOG(LS_WARNING) << "OnRemoveTrack: Track ID=" << track->id() 
-                      << ", Kind=" << track->kind();
-  
   if (track->kind() == webrtc::MediaStreamTrackInterface::kVideoKind) {
     webrtc::VideoTrackInterface* video_track =
         static_cast<webrtc::VideoTrackInterface*>(track.get());
-    
-    RTC_LOG(LS_WARNING) << "OnRemoveTrack: Removing video track " << track->id() 
-                        << " from SDL renderer";
-    
     video_tracks_.erase(
         std::remove_if(video_tracks_.begin(), video_tracks_.end(),
                        [video_track](const webrtc::VideoTrackInterface* track) {
@@ -89,13 +76,7 @@ void PeerConnectionObserver::OnRemoveTrack(
                        }),
         video_tracks_.end());
     receiver_->RemoveTrack(video_track);
-    
-    RTC_LOG(LS_WARNING) << "OnRemoveTrack: Successfully removed video track from SDL";
-  } else {
-    RTC_LOG(LS_WARNING) << "OnRemoveTrack: Audio track, not removing from SDL";
   }
-  
-  RTC_LOG(LS_WARNING) << "===== OnRemoveTrack COMPLETED =====";
 }
 
 void PeerConnectionObserver::ClearAllRegisteredTracks() {
