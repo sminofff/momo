@@ -29,12 +29,12 @@ class PionClient : public std::enable_shared_from_this<PionClient>,
                    public RTCMessageSender,
                    public StatsCollector {
   // Watchdog タイマー設定値
-  static constexpr int WATCHDOG_INITIAL_TIMEOUT = 30;     // 初回接続時
-  static constexpr int WATCHDOG_OFFER_TIMEOUT = 15;       // offer 待機時
-  static constexpr int WATCHDOG_KEEPALIVE_TIMEOUT = 45;   // 通常運用時
-  static constexpr int WATCHDOG_ICE_CONNECTED = 60;       // ICE 接続後
-  static constexpr int RECONNECT_INTERVAL_BASE = 5;       // 再接続間隔ベース
-  static constexpr int RECONNECT_INTERVAL_MAX = 30;       // 再接続間隔最大値
+  static constexpr int kWatchdogInitialTimeout = 30;     // 初回接続時
+  static constexpr int kWatchdogOfferTimeout = 15;       // offer 待機時
+  static constexpr int kWatchdogKeepaliveTimeout = 45;   // 通常運用時
+  static constexpr int kWatchdogIceConnected = 60;       // ICE 接続後
+  static constexpr int kReconnectIntervalBase = 5;       // 再接続間隔ベース
+  static constexpr int kReconnectIntervalMax = 30;       // 再接続間隔最大値
 
   PionClient(boost::asio::io_context& ioc,
              RTCManager* manager,
