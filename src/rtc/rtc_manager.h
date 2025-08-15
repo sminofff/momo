@@ -111,6 +111,7 @@ class RTCManager {
       RTCMessageSender* sender);
   void InitTracks(RTCConnection* conn);
   void SetParameters();
+  void RemoveVideoTrack(webrtc::VideoTrackInterface* track);
 
  private:
   webrtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> factory_;

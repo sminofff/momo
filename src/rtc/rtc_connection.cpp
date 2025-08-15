@@ -253,6 +253,12 @@ bool RTCConnection::IsVideoEnabled() {
   return IsMediaEnabled(GetLocalVideoTrack());
 }
 
+void RTCConnection::RemoveRemoteTrack(const std::string& track_id) {
+  if (observer_) {
+    observer_->RemoveTrackById(track_id);
+  }
+}
+
 webrtc::scoped_refptr<webrtc::MediaStreamInterface>
 RTCConnection::GetLocalStream() {
   return webrtc::scoped_refptr<webrtc::MediaStreamInterface>(
