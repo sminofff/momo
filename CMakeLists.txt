@@ -188,8 +188,8 @@ elseif(MOMO_PACKAGE_NAME STREQUAL "ubuntu-20.04_x86_64")
   set(WEBRTC_LIBRARY_DIR /root/webrtc/lib)
 
   # /root/llvm/clang にあるコンパイラは使わず、apt でインストールした clang-10 を利用する
-  set(CMAKE_C_COMPILER clang-10)
-  set(CMAKE_CXX_COMPILER clang++-10)
+  set(CMAKE_C_COMPILER clang-15)
+  set(CMAKE_CXX_COMPILER clang++-15)
 
   set(USE_LIBCXX ON)
   set(LIBCXX_INCLUDE_DIR /root/llvm/libcxx/include)
@@ -307,7 +307,7 @@ target_sources(momo
 
 target_include_directories(momo PRIVATE src)
 
-set_target_properties(momo PROPERTIES CXX_STANDARD 17 C_STANDARD 99)
+set_target_properties(momo PROPERTIES CXX_STANDARD 20 C_STANDARD 99)
 
 target_link_libraries(momo
   PRIVATE
