@@ -54,7 +54,7 @@ class PionClient : public std::enable_shared_from_this<PionClient>,
   void Close();
 
   void GetStats(std::function<void(
-                    const webrtc::scoped_refptr<const webrtc::RTCStatsReport>&)>
+                    const rtc::scoped_refptr<const webrtc::RTCStatsReport>&)>
                     callback) override;
 
  private:
