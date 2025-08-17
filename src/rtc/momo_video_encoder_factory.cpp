@@ -148,18 +148,18 @@ MomoVideoEncoderFactory::CreateVideoEncoder(
       use_software = true;
     }
 
-    if (use_software) {
-      std::cerr
-          << "The software encoder is not available at the current setting."
-          << std::endl;
-      std::cerr << "Check the list of available encoders by specifying "
-                   "--video-codec-engines."
-                << std::endl;
-      std::cerr
-          << "To enable software encoders, specify --hw-mjpeg-decoder=false."
-          << std::endl;
-      std::exit(1);
-    }
+    // if (use_software) {
+    //   std::cerr
+    //       << "The software encoder is not available at the current setting."
+    //       << std::endl;
+    //   std::cerr << "Check the list of available encoders by specifying "
+    //                "--video-codec-engines."
+    //             << std::endl;
+    //   std::cerr
+    //       << "To enable software encoders, specify --hw-mjpeg-decoder=false."
+    //       << std::endl;
+    //   std::exit(1);
+    // }
   }
 
   if (absl::EqualsIgnoreCase(format.name, cricket::kVp8CodecName)) {

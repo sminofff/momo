@@ -134,6 +134,7 @@ elseif(MOMO_PACKAGE_NAME STREQUAL "ubuntu-18.04_armv8_jetson_nano")
   set(TARGET_ARCH "arm")
   set(TARGET_ARCH_ARM "armv8")
   set(USE_JETSON_ENCODER ON)
+  set(JETSON_PLATFORM "NANO")
   set(USE_H264 ON)
   set(USE_SDL2 ON)
   set(USE_LINUX_PULSE_AUDIO ON)
@@ -674,6 +675,11 @@ elseif (TARGET_OS STREQUAL "linux")
             ${SYSROOT}/usr/src/jetson_multimedia_api/samples/common/classes/NvVideoEncoder.cpp
             ${SYSROOT}/usr/src/jetson_multimedia_api/samples/common/classes/NvVideoDecoder.cpp
         )
+
+        # Jetson Nanoビルド用の定義を追加
+        if (JETSON_PLATFORM STREQUAL "NANO")
+          target_compile_definitions(momo PRIVATE JETSON_NANO)
+        endif()
 
         target_include_directories(momo PRIVATE ${SYSROOT}/usr/src/jetson_multimedia_api/include)
         target_include_directories(momo PRIVATE ${SYSROOT}/usr/src/jetson_multimedia_api/include/libjpeg-8b)
