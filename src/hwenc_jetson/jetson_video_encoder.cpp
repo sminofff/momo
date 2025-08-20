@@ -113,6 +113,11 @@ int32_t JetsonVideoEncoder::InitEncode(const webrtc::VideoCodec* codec_settings,
   width_ = codec_settings->width;
   height_ = codec_settings->height;
   target_bitrate_bps_ = codec_settings->startBitrate * 1000;
+  
+  RTC_LOG(LS_INFO) << "H264 InitEncode: width=" << width_ 
+                   << " height=" << height_
+                   << " startBitrate=" << codec_settings->startBitrate << "kbps"
+                   << " maxBitrate=" << codec_settings->maxBitrate << "kbps";
   if (codec_settings->codecType == webrtc::kVideoCodecH264) {
     key_frame_interval_ = codec_settings->H264().keyFrameInterval;
   } else if (codec_settings->codecType == webrtc::kVideoCodecVP8) {
@@ -237,7 +242,11 @@ int32_t JetsonVideoEncoder::JetsonConfigure() {
   INIT_ERROR(ret < 0, "Failed to encoder setOutputPlaneFormat");
 
   if (codec_.codecType == webrtc::kVideoCodecH264) {
-    ret = encoder_->setProfile(V4L2_MPEG_VIDEO_H264_PROFILE_HIGH);
+    // QP範囲を明示的に設定（30-40の範囲で安定した品質を維持）
+    ret = encoder_->setQpRange(30, 40, 30, 40, 30, 40);
+    INIT_ERROR(ret < 0, "Failed to setQpRange");
+
+    ret = encoder_->setProfile(V4L2_MPEG_VIDEO_H264_PROFILE_BASELINE);
     INIT_ERROR(ret < 0, "Failed to setProfile");
 
     ret = encoder_->setLevel(V4L2_MPEG_VIDEO_H264_LEVEL_5_1);
@@ -676,7 +685,7 @@ webrtc::VideoEncoder::EncoderInfo JetsonVideoEncoder::GetEncoderInfo() const {
   info.is_hardware_accelerated = true;  // ハードウェアアクセラレーションを明示
   info.implementation_name = "Jetson Video Encoder";
   if (codec_.codecType == webrtc::kVideoCodecH264) {
-    static const int kLowH264QpThreshold = 34;
+    static const int kLowH264QpThreshold = 25;
     static const int kHighH264QpThreshold = 40;
     info.scaling_settings = VideoEncoder::ScalingSettings(kLowH264QpThreshold,
                                                           kHighH264QpThreshold);
