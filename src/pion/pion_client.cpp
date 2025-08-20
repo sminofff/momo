@@ -98,6 +98,19 @@ void PionClient::OnConnect(boost::system::error_code ec) {
 
   RTC_LOG(LS_INFO) << __FUNCTION__ << " connected";
 
+  // Send codec info if specified
+  if (!config_.video_codec_type.empty()) {
+    boost::json::object codec_info = {
+        {"videoCodec", config_.video_codec_type}
+    };
+    boost::json::object msg = {
+        {"event", "codecInfo"},
+        {"data", boost::json::serialize(codec_info)}
+    };
+    ws_->WriteText(boost::json::serialize(msg));
+    RTC_LOG(LS_INFO) << "Sent codec info: " << config_.video_codec_type;
+  }
+
   retry_count_ = 0;
   DoRead();
   watchdog_.Enable(kWatchdogOfferTimeout);

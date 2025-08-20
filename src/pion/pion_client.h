@@ -23,6 +23,7 @@
 struct PionClientConfig {
   bool insecure = false;
   std::string signaling_url;  // ws://host:port/ws or wss://host:port/ws
+  std::string video_codec_type = "";  // VP8, VP9, H264, H265, AV1, ALL, or empty for H264 default
 };
 
 class PionClient : public std::enable_shared_from_this<PionClient>,
