@@ -264,6 +264,9 @@ void Util::ParseArgs(int argc,
   pion_app
       ->add_option("--signaling-url", args.pion_signaling_url, "Signaling URL")
       ->required();
+  pion_app->add_option("--video-codec-type", args.pion_video_codec_type,
+                       "Video codec type (VP8, VP9, H264, H265, AV1, ALL)")
+      ->check(CLI::IsMember({"", "VP8", "VP9", "H264", "H265", "AV1", "ALL"}));
 
   sora_app
       ->add_option("--signaling-urls", args.sora_signaling_urls,
