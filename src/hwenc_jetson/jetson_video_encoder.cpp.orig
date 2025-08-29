@@ -279,22 +279,6 @@ int32_t JetsonVideoEncoder::JetsonConfigure() {
     ret = encoder_->setHWPresetType(V4L2_ENC_HW_PRESET_FAST);
 #endif
     INIT_ERROR(ret < 0, "Failed to setHWPresetType");
-
-    // H264でもQP範囲を設定（VP8と同様のアプローチ）
-    // H.264の標準的なQP範囲は0-51だが、実用的な範囲を設定
-    uint32_t h264_qp_min = 
-        codec_.mode == webrtc::VideoCodecMode::kScreensharing ? 20 : 10;
-    uint32_t h264_qp_max = 51;
-    
-    // WebRTCから指定されたqpMaxがある場合は使用
-    if (codec_.qpMax >= h264_qp_min && codec_.qpMax <= 51) {
-      h264_qp_max = codec_.qpMax;
-    }
-    
-    // I/P/Bフレーム全てに同じQP範囲を設定
-    ret = encoder_->setQpRange(h264_qp_min, h264_qp_max, h264_qp_min, h264_qp_max, h264_qp_min, h264_qp_max);
-    INIT_ERROR(ret < 0, "Failed to setQpRange for H264");
-    
   } else if (codec_.codecType == webrtc::kVideoCodecVP8) {
     uint32_t qp_min =
         codec_.mode == webrtc::VideoCodecMode::kScreensharing ? 12 : 2;
