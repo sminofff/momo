@@ -22,6 +22,7 @@
 
 struct PionClientConfig {
   bool insecure = false;
+  bool ultra_low_latency = false;  // Enable ultra low latency mode with playout delay min=0, max=0
   std::string signaling_url;  // ws://host:port/ws or wss://host:port/ws
   std::string video_codec_type = "";  // VP8, VP9, H264, H265, AV1, ALL, or empty for H264 default
 };
@@ -65,6 +66,7 @@ class PionClient : public std::enable_shared_from_this<PionClient>,
  private:
   void DoRead();
   std::shared_ptr<RTCConnection> CreateRTCConnection();
+  std::string AddPlayoutDelayExtension(const std::string& sdp);
 
  private:
   void OnConnect(boost::system::error_code ec);

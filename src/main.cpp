@@ -342,6 +342,7 @@ int main(int argc, char* argv[]) {
     if (use_pion) {
       PionClientConfig config;
       config.insecure = args.insecure;
+      config.ultra_low_latency = args.ultra_low_latency;
       config.signaling_url = args.pion_signaling_url;
       config.video_codec_type = args.pion_video_codec_type;
 

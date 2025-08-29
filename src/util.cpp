@@ -308,6 +308,8 @@ void Util::ParseArgs(int argc,
   pion_app->add_option("--video-codec-type", args.pion_video_codec_type,
                        "Video codec type (VP8, VP9, H264, H265, AV1, ALL)")
       ->check(CLI::IsMember({"", "VP8", "VP9", "H264", "H265", "AV1", "ALL"}));
+  pion_app->add_flag("--ultra-low-latency", args.ultra_low_latency,
+                      "Enable ultra low latency mode (set playout delay to min=0, max=0)");
 
   sora_app
       ->add_option("--signaling-url", args.sora_signaling_urls,

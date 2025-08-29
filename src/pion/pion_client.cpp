@@ -172,6 +172,64 @@ void PionClient::DoRead() {
                       std::placeholders::_3));
 }
 
+std::string PionClient::AddPlayoutDelayExtension(const std::string& sdp) {
+  // Check if playout-delay extension already exists
+  if (sdp.find("http://www.webrtc.org/experiments/rtp-hdrext/playout-delay") != 
+      std::string::npos) {
+    return sdp;  // Already exists
+  }
+
+  // Find available extension ID (typically 12-14)
+  int extension_id = 12;
+  for (int id = 12; id <= 14; ++id) {
+    if (sdp.find("a=extmap:" + std::to_string(id) + " ") == std::string::npos) {
+      extension_id = id;
+      break;
+    }
+  }
+
+  std::string extension_line = "a=extmap:" + std::to_string(extension_id) +
+                               " http://www.webrtc.org/experiments/rtp-hdrext/playout-delay\r\n";
+
+  // Find video section to insert the extension
+  size_t video_pos = sdp.find("m=video");
+  if (video_pos == std::string::npos) {
+    return sdp;  // No video section found
+  }
+
+  // Find the right position to insert (after other extmap lines if they exist)
+  size_t insert_pos = sdp.find("\r\n", video_pos) + 2;  // After m=video line
+  
+  // Look for existing extmap lines in the video section
+  size_t search_pos = insert_pos;
+  size_t last_extmap_pos = std::string::npos;
+  while (true) {
+    size_t next_line_end = sdp.find("\r\n", search_pos);
+    if (next_line_end == std::string::npos) break;
+    
+    std::string line = sdp.substr(search_pos, next_line_end - search_pos);
+    if (line.find("a=extmap:") == 0) {
+      last_extmap_pos = next_line_end + 2;
+    } else if (line.find("m=") == 0 && search_pos != video_pos) {
+      // Reached next media section
+      break;
+    }
+    search_pos = next_line_end + 2;
+  }
+
+  // Insert after the last extmap line if found, otherwise after m=video line
+  if (last_extmap_pos != std::string::npos) {
+    insert_pos = last_extmap_pos;
+  }
+
+  // Insert the extension line
+  std::string modified_sdp = sdp.substr(0, insert_pos) + extension_line + 
+                            sdp.substr(insert_pos);
+  
+  RTC_LOG(LS_INFO) << "Added playout-delay extension with ID " << extension_id;
+  return modified_sdp;
+}
+
 void PionClient::OnRead(boost::system::error_code ec,
                         std::size_t bytes_transferred,
                         std::string text) {
@@ -253,6 +311,11 @@ void PionClient::OnRead(boost::system::error_code ec,
                 std::string sdp;
                 desc->ToString(&sdp);
                 
+                // Add playout-delay extension if ultra low latency is enabled
+                if (self->config_.ultra_low_latency) {
+                  sdp = self->AddPlayoutDelayExtension(sdp);
+                }
+                
                 // answer を boost::asio コンテキストで送信
                 boost::asio::post(self->ioc_, [self, sdp]() {
                   // answer を送信（再ネゴシエーション用）
@@ -288,6 +351,11 @@ void PionClient::OnRead(boost::system::error_code ec,
             [self](webrtc::SessionDescriptionInterface* desc) {
               std::string sdp;
               desc->ToString(&sdp);
+              
+              // Add playout-delay extension if ultra low latency is enabled
+              if (self->config_.ultra_low_latency) {
+                sdp = self->AddPlayoutDelayExtension(sdp);
+              }
               
               self->manager_->SetParameters();
               
