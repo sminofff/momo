@@ -106,6 +106,7 @@ RTCManager::RTCManager(
     ec.h264_encoder = resolve(cf.h264_encoder, info.h264_encoders);
     ec.simulcast = cf.simulcast;
     ec.hardware_encoder_only = cf.hardware_encoder_only;
+    ec.ultra_low_latency = cf.ultra_low_latency;
 #if defined(__linux__) && USE_NVCODEC_ENCODER
     ec.cuda_context = cf.cuda_context;
 #endif

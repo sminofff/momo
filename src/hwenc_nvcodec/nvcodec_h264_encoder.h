@@ -38,6 +38,8 @@ class NvCodecH264Encoder : public webrtc::VideoEncoder {
 
   static bool IsSupported();
 
+  void SetUltraLowLatency(bool enabled) { ultra_low_latency_ = enabled; }
+
   int32_t InitEncode(const webrtc::VideoCodec* codec_settings,
                      int32_t number_of_cores,
                      size_t max_payload_size) override;
@@ -75,6 +77,7 @@ class NvCodecH264Encoder : public webrtc::VideoEncoder {
 #endif
   bool reconfigure_needed_ = false;
   bool use_native_ = false;
+  bool ultra_low_latency_ = false;
   uint32_t width_ = 0;
   uint32_t height_ = 0;
   uint32_t framerate_ = 0;

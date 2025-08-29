@@ -26,6 +26,7 @@ struct MomoVideoEncoderFactoryConfig {
   VideoCodecInfo::Type h264_encoder;
   bool simulcast;
   bool hardware_encoder_only;
+  bool ultra_low_latency;
 #if defined(__linux__) && USE_NVCODEC_ENCODER
   std::shared_ptr<CudaContext> cuda_context;
 #endif

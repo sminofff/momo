@@ -515,6 +515,12 @@ int32_t MMALH264Encoder::SendFrame(unsigned char* buffer, size_t size) {
   encoded_image_.qp_ = h264_bitstream_parser_.GetLastSliceQp().value_or(-1);
   RTC_LOG(LS_INFO) << __FUNCTION__ << " last slice qp:" << encoded_image_.qp_;
 
+  // Apply ultra low latency playout delay if enabled
+  if (ultra_low_latency_) {
+    encoded_image_.playout_delay_.min_ms = 0;
+    encoded_image_.playout_delay_.max_ms = 0;
+  }
+
   webrtc::EncodedImageCallback::Result result =
       callback_->OnEncodedImage(encoded_image_, &codec_specific);
   if (result.error != webrtc::EncodedImageCallback::Result::OK) {

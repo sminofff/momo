@@ -208,6 +208,10 @@ void Util::ParseArgs(int argc,
   app.add_flag("--disable-highpass-filter", args.disable_highpass_filter,
                "Disable highpass filter for audio");
 
+  // WebRTC playout delay設定
+  app.add_flag("--ultra-low-latency", args.ultra_low_latency,
+               "Enable ultra low latency mode (set playout delay to min=0, max=0)");
+
   // ビデオエンコーダ
   app.add_flag("--video-codec-engines", video_codecs,
                "List available video encoders/decoders");

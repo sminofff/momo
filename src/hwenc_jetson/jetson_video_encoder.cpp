@@ -51,7 +51,8 @@ JetsonVideoEncoder::JetsonVideoEncoder(const cricket::VideoCodec& codec)
       encoder_(nullptr),
       configured_framerate_(30),
       use_native_(false),
-      use_dmabuff_(false) {}
+      use_dmabuff_(false),
+      ultra_low_latency_(false) {}
 
 JetsonVideoEncoder::~JetsonVideoEncoder() {
   Release();
@@ -1026,6 +1027,12 @@ int32_t JetsonVideoEncoder::SendFrame(
 
   RTC_LOG(LS_VERBOSE) << "key_frame=" << enc_metadata.KeyFrame
                       << " size=" << size << " qp=" << encoded_image_.qp_;
+
+  // Apply ultra low latency playout delay if enabled
+  if (ultra_low_latency_) {
+    encoded_image_.playout_delay_.min_ms = 0;
+    encoded_image_.playout_delay_.max_ms = 0;
+  }
 
   webrtc::EncodedImageCallback::Result result =
       callback_->OnEncodedImage(encoded_image_, &codec_specific);

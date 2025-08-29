@@ -321,6 +321,12 @@ int32_t NvCodecH264Encoder::Encode(
     h264_bitstream_parser_.ParseBitstream(encoded_image_);
     encoded_image_.qp_ = h264_bitstream_parser_.GetLastSliceQp().value_or(-1);
 
+    // Apply ultra low latency playout delay if enabled
+    if (ultra_low_latency_) {
+      encoded_image_.playout_delay_.min_ms = 0;
+      encoded_image_.playout_delay_.max_ms = 0;
+    }
+
     webrtc::EncodedImageCallback::Result result =
         callback_->OnEncodedImage(encoded_image_, &codec_specific);
     if (result.error != webrtc::EncodedImageCallback::Result::OK) {

@@ -170,9 +170,10 @@ MomoVideoEncoderFactory::CreateVideoEncoder(
     }
 #if USE_JETSON_ENCODER
     if (config_.vp8_encoder == VideoCodecInfo::Type::Jetson) {
-      return WithSimulcast(format, [](const webrtc::SdpVideoFormat& format) {
-        return std::unique_ptr<webrtc::VideoEncoder>(
-            absl::make_unique<JetsonVideoEncoder>(cricket::VideoCodec(format)));
+      return WithSimulcast(format, [this](const webrtc::SdpVideoFormat& format) {
+        auto encoder = absl::make_unique<JetsonVideoEncoder>(cricket::VideoCodec(format));
+        encoder->SetUltraLowLatency(config_.ultra_low_latency);
+        return std::unique_ptr<webrtc::VideoEncoder>(std::move(encoder));
       });
     }
 #endif
@@ -195,9 +196,10 @@ MomoVideoEncoderFactory::CreateVideoEncoder(
     }
 #if USE_JETSON_ENCODER
     if (config_.vp9_encoder == VideoCodecInfo::Type::Jetson) {
-      return WithSimulcast(format, [](const webrtc::SdpVideoFormat& format) {
-        return std::unique_ptr<webrtc::VideoEncoder>(
-            absl::make_unique<JetsonVideoEncoder>(cricket::VideoCodec(format)));
+      return WithSimulcast(format, [this](const webrtc::SdpVideoFormat& format) {
+        auto encoder = absl::make_unique<JetsonVideoEncoder>(cricket::VideoCodec(format));
+        encoder->SetUltraLowLatency(config_.ultra_low_latency);
+        return std::unique_ptr<webrtc::VideoEncoder>(std::move(encoder));
       });
     }
 #endif
@@ -243,18 +245,20 @@ MomoVideoEncoderFactory::CreateVideoEncoder(
 
 #if USE_MMAL_ENCODER
     if (config_.h264_encoder == VideoCodecInfo::Type::MMAL) {
-      return WithSimulcast(format, [](const webrtc::SdpVideoFormat& format) {
-        return std::unique_ptr<webrtc::VideoEncoder>(
-            absl::make_unique<MMALH264Encoder>(cricket::VideoCodec(format)));
+      return WithSimulcast(format, [this](const webrtc::SdpVideoFormat& format) {
+        auto encoder = absl::make_unique<MMALH264Encoder>(cricket::VideoCodec(format));
+        encoder->SetUltraLowLatency(config_.ultra_low_latency);
+        return std::unique_ptr<webrtc::VideoEncoder>(std::move(encoder));
       });
     }
 #endif
 
 #if USE_JETSON_ENCODER
     if (config_.h264_encoder == VideoCodecInfo::Type::Jetson) {
-      return WithSimulcast(format, [](const webrtc::SdpVideoFormat& format) {
-        return std::unique_ptr<webrtc::VideoEncoder>(
-            absl::make_unique<JetsonVideoEncoder>(cricket::VideoCodec(format)));
+      return WithSimulcast(format, [this](const webrtc::SdpVideoFormat& format) {
+        auto encoder = absl::make_unique<JetsonVideoEncoder>(cricket::VideoCodec(format));
+        encoder->SetUltraLowLatency(config_.ultra_low_latency);
+        return std::unique_ptr<webrtc::VideoEncoder>(std::move(encoder));
       });
     }
 #endif
@@ -265,18 +269,20 @@ MomoVideoEncoderFactory::CreateVideoEncoder(
       return WithSimulcast(
 #if defined(__linux__)
           format,
-          [cuda_context =
-               config_.cuda_context](const webrtc::SdpVideoFormat& format) {
-            return std::unique_ptr<webrtc::VideoEncoder>(
-                absl::make_unique<NvCodecH264Encoder>(
-                    cricket::VideoCodec(format), cuda_context));
+          [cuda_context = config_.cuda_context,
+           ultra_low_latency = config_.ultra_low_latency](const webrtc::SdpVideoFormat& format) {
+            auto encoder = absl::make_unique<NvCodecH264Encoder>(
+                cricket::VideoCodec(format), cuda_context);
+            encoder->SetUltraLowLatency(ultra_low_latency);
+            return std::unique_ptr<webrtc::VideoEncoder>(std::move(encoder));
           }
 #else
           format,
-          [](const webrtc::SdpVideoFormat& format) {
-            return std::unique_ptr<webrtc::VideoEncoder>(
-                absl::make_unique<NvCodecH264Encoder>(
-                    cricket::VideoCodec(format)));
+          [ultra_low_latency = config_.ultra_low_latency](const webrtc::SdpVideoFormat& format) {
+            auto encoder = absl::make_unique<NvCodecH264Encoder>(
+                cricket::VideoCodec(format));
+            encoder->SetUltraLowLatency(ultra_low_latency);
+            return std::unique_ptr<webrtc::VideoEncoder>(std::move(encoder));
           }
 #endif
       );

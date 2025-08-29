@@ -82,6 +82,9 @@ struct MomoArgs {
   bool disable_noise_suppression = false;
   bool disable_highpass_filter = false;
 
+  // Ultra low latency mode for WebRTC playout delay
+  bool ultra_low_latency = false;
+
   VideoCodecInfo::Type vp8_encoder = VideoCodecInfo::Type::Default;
   VideoCodecInfo::Type vp8_decoder = VideoCodecInfo::Type::Default;
   VideoCodecInfo::Type vp9_encoder = VideoCodecInfo::Type::Default;

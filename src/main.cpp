@@ -191,6 +191,8 @@ int main(int argc, char* argv[]) {
   rtcm_config.disable_noise_suppression = args.disable_noise_suppression;
   rtcm_config.disable_highpass_filter = args.disable_highpass_filter;
 
+  rtcm_config.ultra_low_latency = args.ultra_low_latency;
+
   rtcm_config.vp8_encoder = args.vp8_encoder;
   rtcm_config.vp8_decoder = args.vp8_decoder;
   rtcm_config.vp9_encoder = args.vp9_encoder;

@@ -43,6 +43,8 @@ class MMALH264Encoder : public webrtc::VideoEncoder {
   explicit MMALH264Encoder(const cricket::VideoCodec& codec);
   ~MMALH264Encoder() override;
 
+  void SetUltraLowLatency(bool enabled) { ultra_low_latency_ = enabled; }
+
   int32_t InitEncode(const webrtc::VideoCodec* codec_settings,
                      int32_t number_of_cores,
                      size_t max_payload_size) override;
@@ -112,6 +114,7 @@ class MMALH264Encoder : public webrtc::VideoEncoder {
   int32_t configured_height_;
   int32_t stride_width_;
   int32_t stride_height_;
+  bool ultra_low_latency_ = false;
 
   webrtc::H264BitstreamParser h264_bitstream_parser_;
 

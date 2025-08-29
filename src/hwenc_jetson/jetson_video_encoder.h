@@ -44,6 +44,8 @@ class JetsonVideoEncoder : public webrtc::VideoEncoder {
   static bool IsSupportedVP8();
   static bool IsSupportedVP9();
 
+  void SetUltraLowLatency(bool enabled) { ultra_low_latency_ = enabled; }
+
   int32_t InitEncode(const webrtc::VideoCodec* codec_settings,
                      int32_t number_of_cores,
                      size_t max_payload_size) override;
@@ -137,6 +139,7 @@ class JetsonVideoEncoder : public webrtc::VideoEncoder {
   bool use_native_;
   NvV4l2Element* native_input_elem_;
   bool use_dmabuff_;
+  bool ultra_low_latency_;
   int dmabuff_fd_[CONVERTER_CAPTURE_NUM];
 
   webrtc::GofInfoVP9 gof_;
