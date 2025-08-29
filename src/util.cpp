@@ -208,10 +208,6 @@ void Util::ParseArgs(int argc,
   app.add_flag("--disable-highpass-filter", args.disable_highpass_filter,
                "Disable highpass filter for audio");
 
-  // WebRTC playout delay設定
-  app.add_flag("--ultra-low-latency", args.ultra_low_latency,
-               "Enable ultra low latency mode (set playout delay to min=0, max=0)");
-
   // ビデオエンコーダ
   app.add_flag("--video-codec-engines", video_codecs,
                "List available video encoders/decoders");
@@ -303,6 +299,8 @@ void Util::ParseArgs(int argc,
   ayame_app->add_option("--client-id", args.ayame_client_id, "Client ID");
   ayame_app->add_option("--signaling-key", args.ayame_signaling_key,
                         "Signaling key");
+  ayame_app->add_flag("--ultra-low-latency", args.ultra_low_latency,
+                      "Enable ultra low latency mode (set playout delay to min=0, max=0)");
 
   pion_app
       ->add_option("--signaling-url", args.pion_signaling_url, "Signaling URL")

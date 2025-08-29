@@ -178,6 +178,59 @@ void AyameClient::CreatePeerConnection() {
   manager_->InitTracks(connection_.get());
 }
 
+std::string AyameClient::AddPlayoutDelayExtension(const std::string& sdp) {
+  // Check if playout-delay extension already exists
+  if (sdp.find("http://www.webrtc.org/experiments/rtp-hdrext/playout-delay") != 
+      std::string::npos) {
+    return sdp;  // Already exists
+  }
+
+  // Find available extension ID (typically 12-14)
+  int extension_id = 12;
+  for (int id = 12; id <= 14; ++id) {
+    if (sdp.find("a=extmap:" + std::to_string(id) + " ") == std::string::npos) {
+      extension_id = id;
+      break;
+    }
+  }
+
+  std::string extension_line = "a=extmap:" + std::to_string(extension_id) +
+                               " http://www.webrtc.org/experiments/rtp-hdrext/playout-delay\r\n";
+
+  // Find video section to insert the extension
+  size_t video_pos = sdp.find("m=video");
+  if (video_pos == std::string::npos) {
+    return sdp;  // No video section found
+  }
+
+  // Find the right position to insert (after other extmap lines if they exist)
+  size_t insert_pos = sdp.find("\r\n", video_pos) + 2;  // After m=video line
+  
+  // Look for existing extmap lines in the video section
+  size_t search_pos = insert_pos;
+  size_t last_extmap_pos = std::string::npos;
+  while (true) {
+    size_t extmap_pos = sdp.find("a=extmap:", search_pos);
+    size_t next_section = sdp.find("m=", search_pos + 1);
+    
+    // Stop if we've gone past the video section or reached the end
+    if (extmap_pos == std::string::npos || 
+        (next_section != std::string::npos && extmap_pos > next_section)) {
+      break;
+    }
+    
+    last_extmap_pos = sdp.find("\r\n", extmap_pos) + 2;
+    search_pos = last_extmap_pos;
+  }
+  
+  // Insert after the last extmap line if found, otherwise after m=video line
+  if (last_extmap_pos != std::string::npos) {
+    insert_pos = last_extmap_pos;
+  }
+
+  return sdp.substr(0, insert_pos) + extension_line + sdp.substr(insert_pos);
+}
+
 void AyameClient::Close() {
   ws_->Close(std::bind(&AyameClient::OnClose, shared_from_this(),
                        std::placeholders::_1));
@@ -237,6 +290,10 @@ void AyameClient::OnRead(boost::system::error_code ec,
     auto on_create_offer = [this](webrtc::SessionDescriptionInterface* desc) {
       std::string sdp;
       desc->ToString(&sdp);
+      // Add playout-delay extension if ultra low latency is enabled
+      if (config_.ultra_low_latency) {
+        sdp = AddPlayoutDelayExtension(sdp);
+      }
       manager_->SetParameters();
       boost::json::value json_message = {{"type", "offer"}, {"sdp", sdp}};
       ws_->WriteText(boost::json::serialize(json_message));
@@ -264,6 +321,10 @@ void AyameClient::OnRead(boost::system::error_code ec,
               [this](webrtc::SessionDescriptionInterface* desc) {
                 std::string sdp;
                 desc->ToString(&sdp);
+                // Add playout-delay extension if ultra low latency is enabled
+                if (config_.ultra_low_latency) {
+                  sdp = AddPlayoutDelayExtension(sdp);
+                }
                 manager_->SetParameters();
                 boost::json::value json_message = {{"type", "answer"},
                                                    {"sdp", sdp}};

@@ -324,6 +324,7 @@ int main(int argc, char* argv[]) {
       AyameClientConfig config;
       config.insecure = args.insecure;
       config.no_google_stun = args.no_google_stun;
+      config.ultra_low_latency = args.ultra_low_latency;
       config.client_cert = args.client_cert;
       config.client_key = args.client_key;
       config.signaling_url = args.ayame_signaling_url;

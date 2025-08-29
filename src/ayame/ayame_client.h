@@ -23,6 +23,7 @@
 struct AyameClientConfig {
   bool insecure = false;
   bool no_google_stun = false;
+  bool ultra_low_latency = false;
   std::string client_cert;
   std::string client_key;
 
@@ -67,6 +68,7 @@ class AyameClient : public std::enable_shared_from_this<AyameClient>,
   void DoSendPong();
   void SetIceServersFromConfig(boost::json::value json_message);
   void CreatePeerConnection();
+  std::string AddPlayoutDelayExtension(const std::string& sdp);
 
  private:
   void OnConnect(boost::system::error_code ec);
