@@ -62,6 +62,24 @@ void Util::ParseArgs(int argc,
 #endif
       },
       "");
+  auto is_valid_force_nv12 = CLI::Validator(
+      [](std::string input) -> std::string {
+#if USE_MMAL_ENCODER || USE_JETSON_ENCODER || USE_NVCODEC_ENCODER
+        return std::string();
+#else
+        return "Not available because your device does not have this feature.";
+#endif
+      },
+      "");
+  auto is_valid_force_yuy2 = CLI::Validator(
+      [](std::string input) -> std::string {
+#if USE_MMAL_ENCODER || USE_JETSON_ENCODER || USE_NVCODEC_ENCODER
+        return std::string();
+#else
+        return "Not available because your device does not have this feature.";
+#endif
+      },
+      "");
   auto is_valid_hw_mjpeg_decoder = CLI::Validator(
       [](std::string input) -> std::string {
         if (input == "1") {
@@ -142,6 +160,14 @@ void Util::ParseArgs(int argc,
          "--force-i420", args.force_i420,
          "Prefer I420 format for video capture (only on supported devices)")
       ->check(is_valid_force_i420);
+  app.add_flag(
+         "--force-nv12", args.force_nv12,
+         "Force NV12 format for video capture (only on supported devices)")
+      ->check(is_valid_force_nv12);
+  app.add_flag(
+         "--force-yuy2", args.force_yuy2,
+         "Force YUY2 format for video capture (only on supported devices)")
+      ->check(is_valid_force_yuy2);
   app.add_option(
          "--hw-mjpeg-decoder", args.hw_mjpeg_decoder,
          "Perform MJPEG deoode and video resize by hardware acceleration "

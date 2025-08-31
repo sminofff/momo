@@ -29,6 +29,8 @@ struct V4L2VideoCapturerConfig {
   int height = 480;
   int framerate = 30;
   bool force_i420 = false;
+  bool force_nv12 = false;
+  bool force_yuy2 = false;
   bool use_native = false;
 };
 
@@ -57,6 +59,7 @@ class V4L2VideoCapturer : public ScalableVideoTrackSource {
   int32_t _currentHeight;
   int32_t _currentFrameRate;
   webrtc::VideoType _captureVideoType;
+  uint32_t _actualPixelFormat;  // Store actual V4L2 pixel format
   struct Buffer {
     void* start;
     size_t length;

@@ -118,6 +118,7 @@ V4L2VideoCapturer::V4L2VideoCapturer()
       _useNative(false),
       _captureStarted(false),
       _captureVideoType(webrtc::VideoType::kI420),
+      _actualPixelFormat(0),
       _pool(NULL) {}
 
 bool V4L2VideoCapturer::FindDevice(const char* deviceUniqueIdUTF8,
@@ -201,26 +202,46 @@ int32_t V4L2VideoCapturer::StartCapture(V4L2VideoCapturerConfig config) {
   // Supported video formats in preferred order.
   // If the requested resolution is larger than VGA, we prefer MJPEG. Go for
   // I420 otherwise.
-  const int nFormats = 6;
+  const int nFormats = 7;
   unsigned int fmts[nFormats] = {};
   if (config.use_native) {
     fmts[0] = V4L2_PIX_FMT_MJPEG;
     fmts[1] = V4L2_PIX_FMT_JPEG;
+  } else if (config.force_nv12) {
+    // Force NV12 format
+    fmts[0] = V4L2_PIX_FMT_NV12;
+    fmts[1] = V4L2_PIX_FMT_YUV420;
+    fmts[2] = V4L2_PIX_FMT_YVU420;
+    fmts[3] = V4L2_PIX_FMT_YUYV;
+    fmts[4] = V4L2_PIX_FMT_UYVY;
+    fmts[5] = V4L2_PIX_FMT_MJPEG;
+    fmts[6] = V4L2_PIX_FMT_JPEG;
+  } else if (config.force_yuy2) {
+    // Force YUY2 format
+    fmts[0] = V4L2_PIX_FMT_YUYV;
+    fmts[1] = V4L2_PIX_FMT_NV12;
+    fmts[2] = V4L2_PIX_FMT_YUV420;
+    fmts[3] = V4L2_PIX_FMT_YVU420;
+    fmts[4] = V4L2_PIX_FMT_UYVY;
+    fmts[5] = V4L2_PIX_FMT_MJPEG;
+    fmts[6] = V4L2_PIX_FMT_JPEG;
   } else if (!config.force_i420 &&
              (config.width > 640 || config.height > 480)) {
     fmts[0] = V4L2_PIX_FMT_MJPEG;
     fmts[1] = V4L2_PIX_FMT_YUV420;
     fmts[2] = V4L2_PIX_FMT_YVU420;
-    fmts[3] = V4L2_PIX_FMT_YUYV;
-    fmts[4] = V4L2_PIX_FMT_UYVY;
-    fmts[5] = V4L2_PIX_FMT_JPEG;
+    fmts[3] = V4L2_PIX_FMT_NV12;
+    fmts[4] = V4L2_PIX_FMT_YUYV;
+    fmts[5] = V4L2_PIX_FMT_UYVY;
+    fmts[6] = V4L2_PIX_FMT_JPEG;
   } else {
     fmts[0] = V4L2_PIX_FMT_YUV420;
     fmts[1] = V4L2_PIX_FMT_YVU420;
-    fmts[2] = V4L2_PIX_FMT_YUYV;
-    fmts[3] = V4L2_PIX_FMT_UYVY;
-    fmts[4] = V4L2_PIX_FMT_MJPEG;
-    fmts[5] = V4L2_PIX_FMT_JPEG;
+    fmts[2] = V4L2_PIX_FMT_NV12;
+    fmts[3] = V4L2_PIX_FMT_YUYV;
+    fmts[4] = V4L2_PIX_FMT_UYVY;
+    fmts[5] = V4L2_PIX_FMT_MJPEG;
+    fmts[6] = V4L2_PIX_FMT_JPEG;
   }
 
   // Enumerate image formats.
@@ -259,12 +280,18 @@ int32_t V4L2VideoCapturer::StartCapture(V4L2VideoCapturerConfig config) {
   video_fmt.fmt.pix.height = config.height;
   video_fmt.fmt.pix.pixelformat = fmts[fmtsIdx];
 
+  // Store the actual pixel format
+  _actualPixelFormat = video_fmt.fmt.pix.pixelformat;
+
   if (video_fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_YUYV)
     _captureVideoType = webrtc::VideoType::kYUY2;
   else if (video_fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_YUV420)
     _captureVideoType = webrtc::VideoType::kI420;
   else if (video_fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_YVU420)
     _captureVideoType = webrtc::VideoType::kYV12;
+  else if (video_fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_NV12)
+    // NV12 is not directly supported by WebRTC VideoType, treat as I420 and convert
+    _captureVideoType = webrtc::VideoType::kI420;
   else if (video_fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_UYVY)
     _captureVideoType = webrtc::VideoType::kUYVY;
   else if (video_fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_MJPEG ||
@@ -537,16 +564,39 @@ void V4L2VideoCapturer::OnCaptured(uint8_t* data, uint32_t bytesused) {
     rtc::scoped_refptr<webrtc::I420Buffer> i420_buffer(
         webrtc::I420Buffer::Create(_currentWidth, _currentHeight));
     i420_buffer->InitializeData();
-    if (libyuv::ConvertToI420(
-            data, bytesused, i420_buffer.get()->MutableDataY(),
-            i420_buffer.get()->StrideY(), i420_buffer.get()->MutableDataU(),
-            i420_buffer.get()->StrideU(), i420_buffer.get()->MutableDataV(),
-            i420_buffer.get()->StrideV(), 0, 0, _currentWidth, _currentHeight,
-            _currentWidth, _currentHeight, libyuv::kRotate0,
-            ConvertVideoType(_captureVideoType)) < 0) {
-      RTC_LOG(LS_ERROR) << "ConvertToI420 Failed";
+    
+    // Special handling for NV12 format
+    if (_actualPixelFormat == V4L2_PIX_FMT_NV12) {
+      // NV12 to I420 conversion
+      int src_stride_y = _currentWidth;
+      int src_stride_uv = _currentWidth;
+      uint8_t* src_y = data;
+      uint8_t* src_uv = data + (_currentWidth * _currentHeight);
+      
+      if (libyuv::NV12ToI420(
+              src_y, src_stride_y,
+              src_uv, src_stride_uv,
+              i420_buffer.get()->MutableDataY(), i420_buffer.get()->StrideY(),
+              i420_buffer.get()->MutableDataU(), i420_buffer.get()->StrideU(),
+              i420_buffer.get()->MutableDataV(), i420_buffer.get()->StrideV(),
+              _currentWidth, _currentHeight) < 0) {
+        RTC_LOG(LS_ERROR) << "NV12ToI420 Failed";
+      } else {
+        dst_buffer = i420_buffer;
+      }
     } else {
-      dst_buffer = i420_buffer;
+      // Use general conversion for other formats
+      if (libyuv::ConvertToI420(
+              data, bytesused, i420_buffer.get()->MutableDataY(),
+              i420_buffer.get()->StrideY(), i420_buffer.get()->MutableDataU(),
+              i420_buffer.get()->StrideU(), i420_buffer.get()->MutableDataV(),
+              i420_buffer.get()->StrideV(), 0, 0, _currentWidth, _currentHeight,
+              _currentWidth, _currentHeight, libyuv::kRotate0,
+              ConvertVideoType(_captureVideoType)) < 0) {
+        RTC_LOG(LS_ERROR) << "ConvertToI420 Failed";
+      } else {
+        dst_buffer = i420_buffer;
+      }
     }
   }
 

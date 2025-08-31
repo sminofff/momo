@@ -18,6 +18,8 @@ struct MomoArgs {
   bool no_video_device = false;
   bool no_audio_device = false;
   bool force_i420 = false;
+  bool force_nv12 = false;
+  bool force_yuy2 = false;
   // Jetson の場合だけデフォルト true
 #if USE_JETSON_ENCODER
   bool hw_mjpeg_decoder = true;
