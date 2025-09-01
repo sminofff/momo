@@ -455,7 +455,7 @@ void SoraClient::OnRead(boost::system::error_code ec,
 
         // simulcast では offer の setRemoteDescription が終わった後に
         // トラックを追加する必要があるため、ここで初期化する
-        self->manager_->InitTracks(self->connection_.get());
+        self->manager_->InitTracks(self->connection_.get(), std::nullopt);
 
         if (self->config_.simulcast &&
             json_message.as_object().count("encodings") != 0) {
@@ -581,10 +581,6 @@ void SoraClient::OnRead(boost::system::error_code ec,
                        << ": client_id=" << json_message.at("client_id")
                        << ": connection_id="
                        << json_message.at("connection_id");
-    } else if (event_type == "network.status") {
-      RTC_LOG(LS_INFO) << __FUNCTION__ << ": event_type=" << event_type
-                       << ": unstable_level="
-                       << json_message.at("unstable_level");
     } else if (event_type == "spotlight.changed") {
       RTC_LOG(LS_INFO) << __FUNCTION__ << ": event_type=" << event_type
                        << ": client_id=" << json_message.at("client_id")
