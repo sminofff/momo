@@ -75,13 +75,13 @@ int main(int argc, char* argv[]) {
 
   MomoArgs args;
 
-  bool use_test = false;
+  bool use_p2p = false;
   bool use_ayame = false;
   bool use_sora = false;
   bool use_pion = false;
   int log_level = webrtc::LS_NONE;
 
-  Util::ParseArgs(argc, argv, use_test, use_ayame, use_sora, use_pion, log_level, args);
+  Util::ParseArgs(argc, argv, use_p2p, use_ayame, use_sora, use_pion, log_level, args);
 
   webrtc::LogMessage::LogToDebug((webrtc::LoggingSeverity)log_level);
   webrtc::LogMessage::LogTimestamps();
@@ -152,6 +152,8 @@ int main(int argc, char* argv[]) {
         v4l2_config.height = size.height;
         v4l2_config.framerate = args.framerate;
         v4l2_config.force_i420 = args.force_i420;
+        v4l2_config.force_yuy2 = args.force_yuy2;
+        v4l2_config.force_nv12 = args.force_nv12;
         v4l2_config.use_native = args.hw_mjpeg_decoder;
 
 #if defined(USE_JETSON_ENCODER)
@@ -344,14 +346,14 @@ int main(int argc, char* argv[]) {
       stats_collector = sora_client;
     }
 
-    if (use_test) {
+    if (use_p2p) {
       P2PServerConfig config;
       config.no_google_stun = args.no_google_stun;
-      config.doc_root = args.test_document_root;
+      config.doc_root = args.p2p_document_root;
 
       const boost::asio::ip::tcp::endpoint endpoint{
           boost::asio::ip::make_address("0.0.0.0"),
-          static_cast<unsigned short>(args.test_port)};
+          static_cast<unsigned short>(args.p2p_port)};
       p2p_server = P2PServer::Create(ioc, endpoint, rtc_manager.get(),
                                      std::move(config));
       p2p_server->Run();
@@ -369,6 +371,9 @@ int main(int argc, char* argv[]) {
       config.room_id = args.ayame_room_id;
       config.client_id = args.ayame_client_id;
       config.signaling_key = args.ayame_signaling_key;
+      config.direction = args.ayame_direction;
+      config.video_codec_type = args.ayame_video_codec_type;
+      config.audio_codec_type = args.ayame_audio_codec_type;
 
       ayame_client =
           AyameClient::Create(ioc, rtc_manager.get(), std::move(config));
@@ -381,7 +386,9 @@ int main(int argc, char* argv[]) {
       PionClientConfig config;
       config.insecure = args.insecure;
       config.signaling_url = args.pion_signaling_url;
+      config.direction = args.pion_direction;
       config.video_codec_type = args.pion_video_codec_type;
+      config.audio_codec_type = args.pion_audio_codec_type;
 
       pion_client =
           PionClient::Create(ioc, rtc_manager.get(), std::move(config));

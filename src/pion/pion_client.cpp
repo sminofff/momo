@@ -17,6 +17,26 @@
 // ログ出力のためのマクロ
 #include <rtc_base/logging.h>
 
+namespace {
+// 映像補助コーデック
+const std::vector<std::string> kVideoAuxiliaryCodecs = {"RTX", "RED", "ULPFEC",
+                                                        "FLEXFEC-03"};
+
+// 音声補助コーデック
+const std::vector<std::string> kAudioAuxiliaryCodecs = {"TELEPHONE-EVENT",
+                                                        "CN"};
+
+// コーデックが補助コーデックかどうかを判定
+bool IsAuxiliaryCodec(const std::string& codec_name,
+                      webrtc::MediaType media_type) {
+  const auto& auxiliary_codecs = media_type == webrtc::MediaType::VIDEO
+                                     ? kVideoAuxiliaryCodecs
+                                     : kAudioAuxiliaryCodecs;
+  return std::find(auxiliary_codecs.begin(), auxiliary_codecs.end(),
+                   codec_name) != auxiliary_codecs.end();
+}
+}  // namespace
+
 PionClient::PionClient(boost::asio::io_context& ioc,
                        RTCManager* manager,
                        PionClientConfig config)
@@ -139,6 +159,116 @@ std::shared_ptr<RTCConnection> PionClient::CreateRTCConnection() {
       webrtc::PeerConnectionInterface::ContinualGatheringPolicy::GATHER_CONTINUALLY;
 
   return manager_->CreateConnection(rtc_config, this);
+}
+
+void PionClient::SetCodecPreferences() {
+  if (config_.video_codec_type.empty() && config_.audio_codec_type.empty()) {
+    return;
+  }
+
+  auto pc = connection_->GetConnection();
+  if (pc == nullptr) {
+    RTC_LOG(LS_ERROR) << "PeerConnection is null";
+    return;
+  }
+
+  // PeerConnectionFactory から GetRtpSenderCapabilities を使ってコーデック一覧を取得
+  auto factory = manager_->GetFactory();
+  if (factory == nullptr) {
+    RTC_LOG(LS_ERROR) << "PeerConnectionFactory is null";
+    return;
+  }
+
+  auto transceivers = pc->GetTransceivers();
+
+  // Transceiver が存在しない場合はエラーを出して何もしない
+  if (transceivers.empty()) {
+    RTC_LOG(LS_ERROR)
+        << "No transceivers found when trying to set codec preferences";
+    return;
+  }
+
+  for (auto transceiver : transceivers) {
+    // VIDEO でも AUDIO でもない Transceiver はスキップ
+    if (transceiver->media_type() != webrtc::MediaType::VIDEO &&
+        transceiver->media_type() != webrtc::MediaType::AUDIO) {
+      continue;
+    }
+
+    // 指定されたコーデックが空の場合はスキップ
+    if (transceiver->media_type() == webrtc::MediaType::VIDEO &&
+            config_.video_codec_type.empty() ||
+        transceiver->media_type() == webrtc::MediaType::AUDIO &&
+            config_.audio_codec_type.empty()) {
+      continue;
+    }
+
+    std::string target_codec =
+        transceiver->media_type() == webrtc::MediaType::VIDEO
+            ? config_.video_codec_type
+            : config_.audio_codec_type;
+
+    // PeerConnectionFactory から送信側と受信側の両方の capabilities を取得
+    webrtc::RtpCapabilities sender_capabilities =
+        factory->GetRtpSenderCapabilities(transceiver->media_type());
+    webrtc::RtpCapabilities receiver_capabilities =
+        factory->GetRtpReceiverCapabilities(transceiver->media_type());
+
+    // 送信側と受信側の両方でサポートされているコーデックを見つける
+    std::vector<webrtc::RtpCodecCapability> common_codecs;
+    for (const auto& sender_codec : sender_capabilities.codecs) {
+      for (const auto& receiver_codec : receiver_capabilities.codecs) {
+        // MIMEタイプが一致する場合に共通コーデックとみなす
+        if (sender_codec.mime_type() == receiver_codec.mime_type()) {
+          common_codecs.push_back(sender_codec);
+          break;
+        }
+      }
+    }
+
+    // 共通コーデックが空の場合はスキップ
+    if (common_codecs.empty()) {
+      RTC_LOG(LS_WARNING)
+          << "No common codec capabilities available for transceiver";
+      continue;
+    }
+
+    RTC_LOG(LS_INFO) << "Found " << common_codecs.size()
+                     << " common codecs for "
+                     << webrtc::MediaTypeToString(transceiver->media_type());
+
+    // コーデックのフィルタリング
+    std::vector<webrtc::RtpCodecCapability> filtered_codecs;
+    for (const auto& codec : common_codecs) {
+      // 指定されたコーデックまたは補助的なコーデックは残す
+      if (codec.name == target_codec ||
+          IsAuxiliaryCodec(codec.name, transceiver->media_type())) {
+        filtered_codecs.push_back(codec);
+      }
+    }
+
+    // 指定されたコーデックが見つからなかった場合はエラー
+    if (filtered_codecs.empty()) {
+      RTC_LOG(LS_ERROR) << "Specified codec '" << target_codec << "' for "
+                        << webrtc::MediaTypeToString(transceiver->media_type())
+                        << " is not available. Available codecs:";
+      for (const auto& codec : common_codecs) {
+        RTC_LOG(LS_ERROR) << "  - " << codec.name;
+      }
+      continue;
+    }
+
+    auto error = transceiver->SetCodecPreferences(filtered_codecs);
+    if (!error.ok()) {
+      RTC_LOG(LS_ERROR) << "Failed to set codec preferences: "
+                        << error.message();
+      continue;
+    }
+
+    RTC_LOG(LS_INFO) << "Successfully set codec preferences for "
+                     << webrtc::MediaTypeToString(transceiver->media_type())
+                     << " to " << target_codec;
+  }
 }
 
 void PionClient::Close() {
@@ -280,8 +410,11 @@ void PionClient::OnRead(boost::system::error_code ec,
             return;
           }
 
-          // トラックを初期化
-          self->manager_->InitTracks(self->connection_.get());
+          // トラックを初期化（direction を指定）
+          self->manager_->InitTracks(self->connection_.get(), self->config_.direction);
+
+          // InitTracks で Transceiver が作成された後に SetCodecPreferences を呼ぶ
+          self->SetCodecPreferences();
 
           // answer を生成
           self->connection_->CreateAnswer(

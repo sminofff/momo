@@ -1,0 +1,126 @@
+name: e2e-test-workflow
+
+on:
+  workflow_call:
+
+env:
+  TEST_SORA_MODE_SIGNALING_URLS: ${{ secrets.TEST_SIGNALING_URLS }}
+  TEST_SORA_MODE_CHANNEL_ID_PREFIX: ${{ secrets.TEST_CHANNEL_ID_PREFIX }}
+  TEST_SORA_MODE_SECRET_KEY: ${{ secrets.TEST_SECRET_KEY }}
+  OPENH264_VERSION: 2.6.0
+
+jobs:
+  e2e-test-ubuntu:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            package: ubuntu-22.04_x86_64
+          - os: ubuntu-24.04
+            package: ubuntu-24.04_x86_64
+    name: E2E Test ${{ matrix.package }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates libdrm2 libva2 libva-drm2
+      
+      - name: Download and extract momo binary
+        uses: ./.github/actions/download-artifact
+        with:
+          platform: ${{ matrix.package }}
+
+      - name: Cache OpenH264
+        id: cache-openh264
+        uses: actions/cache@v4
+        with:
+          path: libopenh264.so
+          key: openh264-${{ env.OPENH264_VERSION }}-linux64
+
+      - name: Download OpenH264
+        if: steps.cache-openh264.outputs.cache-hit != 'true'
+        run: |
+          curl -L -o libopenh264.so.bz2 http://ciscobinary.openh264.org/libopenh264-${{ env.OPENH264_VERSION }}-linux64.8.so.bz2
+          bunzip2 libopenh264.so.bz2
+          chmod +x libopenh264.so
+
+      - name: Setup OpenH264 environment
+        run: echo "OPENH264_PATH=${{ github.workspace }}/libopenh264.so" >> $GITHUB_ENV
+
+      - uses: astral-sh/setup-uv@v6
+      
+      - name: Run E2E tests
+        run: |
+          uv sync
+          uv run pytest -v
+        working-directory: ./test
+
+  e2e-test-macos:
+    name: E2E Test macos_arm64
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      
+      - name: Download and extract momo binary
+        uses: ./.github/actions/download-artifact
+        with:
+          platform: macos_arm64
+
+      - uses: astral-sh/setup-uv@v6
+      
+      - name: Run E2E tests
+        run: |
+          uv sync
+          uv run pytest -v
+        working-directory: ./test
+
+  e2e-test-ubuntu-haw:
+    strategy:
+      matrix:
+        include:
+          - name: Intel VPL
+            runner_labels: '["self-hosted", "linux", "x64", "Intel-VPL"]'
+            test_file: test_sora_mode_intel_vpl.py
+            env_vars: |
+              INTEL_VPL=true
+              LIBVA_MESSAGING_LEVEL=0
+          - name: NVIDIA Video Codec SDK
+            runner_labels: '["self-hosted", "linux", "x64", "NVIDIA-Video-Codec-SDK"]'
+            test_file: test_sora_mode_nvidia_video_codec_sdk.py
+            env_vars: |
+              NVIDIA_VIDEO_CODEC_SDK=true
+    name: E2E Test ubuntu-24.04_x86_64 ${{ matrix.name }}
+    runs-on:
+      group: Self
+      labels: ${{ fromJSON(matrix.runner_labels) }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      
+      - name: Set environment variables
+        run: |
+          echo "${{ matrix.env_vars }}" | while read line; do
+            if [ -n "$line" ]; then
+              echo "$line" >> $GITHUB_ENV
+            fi
+          done
+      
+      - name: Download and extract momo binary
+        uses: ./.github/actions/download-artifact
+        with:
+          platform: ubuntu-24.04_x86_64
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      
+      - name: Run HW accelerated E2E tests
+        run: |
+          uv sync
+          uv run pytest ${{ matrix.test_file }} -v
+        working-directory: ./test

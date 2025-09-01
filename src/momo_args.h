@@ -22,6 +22,8 @@ struct MomoArgs {
   bool fake_capture_device = false;
 #endif
   bool force_i420 = false;
+  bool force_yuy2 = false;
+  bool force_nv12 = false;
   // Jetson の場合だけデフォルト true
 #if defined(USE_JETSON_ENCODER)
   bool hw_mjpeg_decoder = true;
@@ -76,16 +78,25 @@ struct MomoArgs {
   boost::optional<bool> sora_ignore_disconnect_websocket;
   int sora_disconnect_wait_timeout = 5;
 
-  std::string test_document_root;
-  int test_port = 8080;
+  std::string p2p_document_root;
+  int p2p_port = 8080;
 
   std::string ayame_signaling_url;
   std::string ayame_room_id;
   std::string ayame_client_id = "";
   std::string ayame_signaling_key = "";
+  // sendrecv, sendonly, recvonly
+  std::string ayame_direction = "sendrecv";
+  // 空文字の場合コーデックは WebRTC デフォルトを使用
+  std::string ayame_video_codec_type = "";
+  std::string ayame_audio_codec_type = "";
 
   std::string pion_signaling_url;
-  std::string pion_video_codec_type = "";  // VP8, VP9, H264, H265, AV1, ALL, or empty for H264 default
+  // sendrecv, sendonly, recvonly
+  std::string pion_direction = "sendrecv";
+  // 空文字の場合コーデックは WebRTC デフォルトを使用
+  std::string pion_video_codec_type = "";
+  std::string pion_audio_codec_type = "";
 
   bool disable_echo_cancellation = false;
   bool disable_auto_gain_control = false;
