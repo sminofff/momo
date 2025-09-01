@@ -161,6 +161,67 @@ std::shared_ptr<RTCConnection> PionClient::CreateRTCConnection() {
   return manager_->CreateConnection(rtc_config, this);
 }
 
+void PionClient::SetBitrateParameters() {
+  // bitrate が設定されていない場合は何もしない
+  if (config_.video_bitrate == 0 && config_.audio_bitrate == 0) {
+    return;
+  }
+
+  auto pc = connection_->GetConnection();
+  if (pc == nullptr) {
+    RTC_LOG(LS_ERROR) << "PeerConnection is null";
+    return;
+  }
+
+  auto transceivers = pc->GetTransceivers();
+  
+  for (auto transceiver : transceivers) {
+    // 送信方向を持たない transceiver はスキップ
+    auto direction = transceiver->direction();
+    if (direction != webrtc::RtpTransceiverDirection::kSendRecv &&
+        direction != webrtc::RtpTransceiverDirection::kSendOnly) {
+      continue;
+    }
+
+    auto sender = transceiver->sender();
+    if (!sender) {
+      continue;
+    }
+
+    auto parameters = sender->GetParameters();
+    bool parameters_modified = false;
+
+    // Video bitrate 設定
+    if (transceiver->media_type() == webrtc::MediaType::VIDEO && 
+        config_.video_bitrate > 0) {
+      for (auto& encoding : parameters.encodings) {
+        encoding.max_bitrate_bps = config_.video_bitrate * 1000;  // kbps to bps
+        parameters_modified = true;
+      }
+      RTC_LOG(LS_INFO) << "Setting video max bitrate to " 
+                       << config_.video_bitrate << " kbps";
+    }
+    // Audio bitrate 設定
+    else if (transceiver->media_type() == webrtc::MediaType::AUDIO && 
+             config_.audio_bitrate > 0) {
+      for (auto& encoding : parameters.encodings) {
+        encoding.max_bitrate_bps = config_.audio_bitrate * 1000;  // kbps to bps
+        parameters_modified = true;
+      }
+      RTC_LOG(LS_INFO) << "Setting audio max bitrate to " 
+                       << config_.audio_bitrate << " kbps";
+    }
+
+    if (parameters_modified) {
+      auto error = sender->SetParameters(parameters);
+      if (!error.ok()) {
+        RTC_LOG(LS_ERROR) << "Failed to set bitrate parameters: " 
+                          << error.message();
+      }
+    }
+  }
+}
+
 void PionClient::SetCodecPreferences() {
   if (config_.video_codec_type.empty() && config_.audio_codec_type.empty()) {
     return;
@@ -415,6 +476,9 @@ void PionClient::OnRead(boost::system::error_code ec,
 
           // InitTracks で Transceiver が作成された後に SetCodecPreferences を呼ぶ
           self->SetCodecPreferences();
+          
+          // Codec 設定後に Bitrate パラメータを設定
+          self->SetBitrateParameters();
 
           // answer を生成
           self->connection_->CreateAnswer(

@@ -27,6 +27,9 @@ struct PionClientConfig {
   std::string direction = "sendrecv";
   std::string video_codec_type = "";
   std::string audio_codec_type = "";
+  // 0 の場合ビットレートは制限しない (kbps)
+  int video_bitrate = 0;
+  int audio_bitrate = 0;
 };
 
 class PionClient : public std::enable_shared_from_this<PionClient>,
@@ -69,6 +72,7 @@ class PionClient : public std::enable_shared_from_this<PionClient>,
   void DoRead();
   std::shared_ptr<RTCConnection> CreateRTCConnection();
   void SetCodecPreferences();
+  void SetBitrateParameters();
 
  private:
   void OnConnect(boost::system::error_code ec);

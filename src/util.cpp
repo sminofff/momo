@@ -293,6 +293,12 @@ void Util::ParseArgs(int argc,
   pion_app->add_option("--audio-codec-type", args.pion_audio_codec_type,
                        "Audio codec type (OPUS, PCMU, PCMA)")
       ->check(CLI::IsMember({"", "OPUS", "PCMU", "PCMA"}));
+  pion_app->add_option("--video-bitrate", args.pion_video_bitrate,
+                       "Video bitrate in kbps (0-8000, 0 means no limit)")
+      ->check(CLI::Range(0, 8000));
+  pion_app->add_option("--audio-bitrate", args.pion_audio_bitrate,
+                       "Audio bitrate in kbps (0-256, 0 means no limit)")
+      ->check(CLI::Range(0, 256));
 
   sora_app
       ->add_option("--signaling-urls", args.sora_signaling_urls,

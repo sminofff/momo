@@ -97,6 +97,9 @@ struct MomoArgs {
   // 空文字の場合コーデックは WebRTC デフォルトを使用
   std::string pion_video_codec_type = "";
   std::string pion_audio_codec_type = "";
+  // 0 の場合ビットレートは制限しない
+  int pion_video_bitrate = 0;
+  int pion_audio_bitrate = 0;
 
   bool disable_echo_cancellation = false;
   bool disable_auto_gain_control = false;
