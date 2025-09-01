@@ -387,6 +387,7 @@ int main(int argc, char* argv[]) {
       config.insecure = args.insecure;
       config.signaling_url = args.pion_signaling_url;
       config.video_codec_type = args.pion_video_codec_type;
+      config.audio_codec_type = args.pion_audio_codec_type;
 
       pion_client =
           PionClient::Create(ioc, rtc_manager.get(), std::move(config));

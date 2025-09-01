@@ -92,7 +92,9 @@ struct MomoArgs {
   std::string ayame_audio_codec_type = "";
 
   std::string pion_signaling_url;
-  std::string pion_video_codec_type = "";  // VP8, VP9, H264, H265, AV1, ALL, or empty for H264 default
+  // 空文字の場合コーデックは WebRTC デフォルトを使用
+  std::string pion_video_codec_type = "";
+  std::string pion_audio_codec_type = "";
 
   bool disable_echo_cancellation = false;
   bool disable_auto_gain_control = false;
