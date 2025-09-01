@@ -284,9 +284,15 @@ void Util::ParseArgs(int argc,
   pion_app
       ->add_option("--signaling-url", args.pion_signaling_url, "Signaling URL")
       ->required();
+  pion_app->add_option("--direction", args.pion_direction,
+                       "Direction (default: sendrecv)")
+      ->check(CLI::IsMember({"sendrecv", "sendonly", "recvonly"}));
   pion_app->add_option("--video-codec-type", args.pion_video_codec_type,
                        "Video codec type (VP8, VP9, H264, H265, AV1, ALL)")
       ->check(CLI::IsMember({"", "VP8", "VP9", "H264", "H265", "AV1", "ALL"}));
+  pion_app->add_option("--audio-codec-type", args.pion_audio_codec_type,
+                       "Audio codec type (OPUS, PCMU, PCMA)")
+      ->check(CLI::IsMember({"", "OPUS", "PCMU", "PCMA"}));
 
   sora_app
       ->add_option("--signaling-urls", args.sora_signaling_urls,

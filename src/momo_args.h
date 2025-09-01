@@ -92,6 +92,8 @@ struct MomoArgs {
   std::string ayame_audio_codec_type = "";
 
   std::string pion_signaling_url;
+  // sendrecv, sendonly, recvonly
+  std::string pion_direction = "sendrecv";
   // 空文字の場合コーデックは WebRTC デフォルトを使用
   std::string pion_video_codec_type = "";
   std::string pion_audio_codec_type = "";

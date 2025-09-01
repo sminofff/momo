@@ -23,6 +23,8 @@
 struct PionClientConfig {
   bool insecure = false;
   std::string signaling_url;  // ws://host:port/ws or wss://host:port/ws
+  // sendrecv, sendonly, recvonly
+  std::string direction = "sendrecv";
   std::string video_codec_type = "";
   std::string audio_codec_type = "";
 };

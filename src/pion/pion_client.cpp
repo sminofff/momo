@@ -410,8 +410,8 @@ void PionClient::OnRead(boost::system::error_code ec,
             return;
           }
 
-          // トラックを初期化（pion は sendrecv なので direction は指定しない）
-          self->manager_->InitTracks(self->connection_.get(), std::nullopt);
+          // トラックを初期化（direction を指定）
+          self->manager_->InitTracks(self->connection_.get(), self->config_.direction);
 
           // InitTracks で Transceiver が作成された後に SetCodecPreferences を呼ぶ
           self->SetCodecPreferences();
