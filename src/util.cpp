@@ -93,6 +93,8 @@ void Util::ParseArgs(int argc,
                "Do not use video device");
   app.add_flag("--no-audio-device", args.no_audio_device,
                "Do not use audio device");
+  app.add_flag("--list-devices", args.list_devices,
+               "List available video devices and exit");
 #if defined(USE_FAKE_CAPTURE_DEVICE)
   app.add_flag("--fake-capture-device", args.fake_capture_device,
                "Use fake video capture device instead of real camera");
@@ -269,8 +271,9 @@ void Util::ParseArgs(int argc,
   ayame_app->add_option("--client-id", args.ayame_client_id, "Client ID");
   ayame_app->add_option("--signaling-key", args.ayame_signaling_key,
                         "Signaling key");
-  ayame_app->add_option("--direction", args.ayame_direction,
-                        "Direction (default: sendrecv)")
+  ayame_app
+      ->add_option("--direction", args.ayame_direction,
+                   "Direction (default: sendrecv)")
       ->check(CLI::IsMember({"sendrecv", "sendonly", "recvonly"}));
   ayame_app
       ->add_option("--video-codec-type", args.ayame_video_codec_type,
@@ -429,6 +432,13 @@ void Util::ParseArgs(int argc,
   if (video_codecs) {
     ShowVideoCodecs(VideoCodecInfo::Get());
     exit(0);
+  }
+
+  if (!p2p_app->parsed() && !sora_app->parsed() && !ayame_app->parsed() && !pion_app->parsed()) {
+  // --list-devices が指定された場合は、サブコマンドチェックをスキップ
+  if (args.list_devices) {
+    // main.cpp で処理されるので、ここでは何もしない
+    return;
   }
 
   if (!p2p_app->parsed() && !sora_app->parsed() && !ayame_app->parsed() && !pion_app->parsed()) {
