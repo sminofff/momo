@@ -53,6 +53,10 @@
 #include "sora/sora_server.h"
 #include "util.h"
 
+#if defined(__linux__)
+#include "sora/v4l2/v4l2_device.h"
+#endif
+
 #ifdef _WIN32
 #include <rtc_base/win/scoped_com_initializer.h>
 #endif
@@ -62,6 +66,22 @@
 #endif
 
 const size_t kDefaultMaxLogFileSize = 10 * 1024 * 1024;
+
+#if defined(__linux__)
+
+static void ListVideoDevices() {
+  auto devices = sora::EnumV4L2CaptureDevices();
+  if (!devices) {
+    std::cerr << "Failed to enumerate video devices" << std::endl;
+    return;
+  }
+
+  std::cout << "=== Available video devices ===" << std::endl;
+  std::cout << std::endl;
+  std::cout << sora::FormatV4L2Devices(*devices);
+}
+
+#endif
 
 int main(int argc, char* argv[]) {
 #ifdef _WIN32
@@ -82,6 +102,19 @@ int main(int argc, char* argv[]) {
   int log_level = webrtc::LS_NONE;
 
   Util::ParseArgs(argc, argv, use_p2p, use_ayame, use_sora, use_pion, log_level, args);
+
+#if defined(__linux__)
+  // --list-devices オプションの処理
+  if (args.list_devices) {
+    ListVideoDevices();
+    return 0;
+  }
+#else
+  if (args.list_devices) {
+    std::cerr << "--list-devices is only supported on Linux" << std::endl;
+    return 1;
+  }
+#endif
 
   webrtc::LogMessage::LogToDebug((webrtc::LoggingSeverity)log_level);
   webrtc::LogMessage::LogTimestamps();
@@ -389,6 +422,8 @@ int main(int argc, char* argv[]) {
       config.direction = args.pion_direction;
       config.video_codec_type = args.pion_video_codec_type;
       config.audio_codec_type = args.pion_audio_codec_type;
+      config.video_bitrate = args.pion_video_bitrate;
+      config.audio_bitrate = args.pion_audio_bitrate;
 
       pion_client =
           PionClient::Create(ioc, rtc_manager.get(), std::move(config));
