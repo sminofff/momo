@@ -325,6 +325,12 @@ void Util::ParseArgs(int argc,
   ayame_app->add_option("--client-id", args.ayame_client_id, "Client ID");
   ayame_app->add_option("--signaling-key", args.ayame_signaling_key,
                         "Signaling key");
+  ayame_app->add_option("--video-codec-type", args.ayame_video_codec_type,
+                        "Video codec type (VP8, VP9, AV1, H264, H265)")
+      ->check(CLI::IsMember({"", "VP8", "VP9", "AV1", "H264", "H265"}));
+  ayame_app->add_option("--audio-codec-type", args.ayame_audio_codec_type,
+                        "Audio codec type (OPUS, PCMU, PCMA)")
+      ->check(CLI::IsMember({"", "OPUS", "PCMU", "PCMA"}));
   ayame_app->add_flag("--ultra-low-latency", args.ultra_low_latency,
                       "Enable ultra low latency mode (set playout delay to min=0, max=0)");
 

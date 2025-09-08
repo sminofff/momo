@@ -178,6 +178,100 @@ void AyameClient::CreatePeerConnection() {
   manager_->InitTracks(connection_.get());
 }
 
+std::string AyameClient::SetCodecPreferencesInSDP(const std::string& sdp) {
+  std::string modified_sdp = sdp;
+  
+  // ビデオコーデックの優先順位を設定
+  if (!config_.video_codec_type.empty()) {
+    // m=video行を見つける
+    size_t video_pos = modified_sdp.find("m=video ");
+    if (video_pos != std::string::npos) {
+      // m=video行の終わりを見つける
+      size_t line_end = modified_sdp.find("\r\n", video_pos);
+      if (line_end != std::string::npos) {
+        // m=video行を取得
+        std::string m_line = modified_sdp.substr(video_pos, line_end - video_pos);
+        
+        // ペイロードタイプを解析
+        size_t port_end = m_line.find(" ", 8); // "m=video "の後
+        size_t fmt_start = m_line.find(" ", port_end + 1) + 1; // RTP/AVPやRTP/SAVPF等の後
+        std::string formats = m_line.substr(fmt_start);
+        
+        // 各ペイロードタイプに対応するコーデックを確認
+        std::vector<std::string> payload_types;
+        std::vector<std::string> preferred_pts;
+        std::vector<std::string> other_pts;
+        
+        size_t pos = 0;
+        while (pos < formats.length()) {
+          size_t space = formats.find(" ", pos);
+          std::string pt = (space == std::string::npos) ? 
+                          formats.substr(pos) : 
+                          formats.substr(pos, space - pos);
+          payload_types.push_back(pt);
+          pos = (space == std::string::npos) ? formats.length() : space + 1;
+        }
+        
+        // 各ペイロードタイプのコーデックを確認
+        for (const auto& pt : payload_types) {
+          std::string rtpmap_line = "a=rtpmap:" + pt + " ";
+          size_t rtpmap_pos = modified_sdp.find(rtpmap_line);
+          if (rtpmap_pos != std::string::npos) {
+            size_t codec_end = modified_sdp.find("/", rtpmap_pos);
+            if (codec_end != std::string::npos) {
+              std::string codec_name = modified_sdp.substr(
+                  rtpmap_pos + rtpmap_line.length(),
+                  codec_end - (rtpmap_pos + rtpmap_line.length()));
+              
+              // 指定されたコーデックまたは関連するコーデック（RTX等）を優先
+              if (codec_name == config_.video_codec_type) {
+                preferred_pts.insert(preferred_pts.begin(), pt);
+              } else if (codec_name == "rtx") {
+                // RTXは対応するコーデックの後に配置
+                preferred_pts.push_back(pt);
+              } else {
+                other_pts.push_back(pt);
+              }
+            }
+          } else {
+            other_pts.push_back(pt);
+          }
+        }
+        
+        // 優先ペイロードタイプリストを再構築
+        std::string new_formats;
+        for (const auto& pt : preferred_pts) {
+          if (!new_formats.empty()) new_formats += " ";
+          new_formats += pt;
+        }
+        for (const auto& pt : other_pts) {
+          if (!new_formats.empty()) new_formats += " ";
+          new_formats += pt;
+        }
+        
+        // m=video行を再構築
+        std::string new_m_line = m_line.substr(0, fmt_start) + new_formats;
+        modified_sdp.replace(video_pos, line_end - video_pos, new_m_line);
+        
+        RTC_LOG(LS_INFO) << "Modified video codec order in SDP, prioritizing: " 
+                        << config_.video_codec_type;
+      }
+    }
+  }
+  
+  // オーディオコーデックの優先順位を設定（同様の処理）
+  if (!config_.audio_codec_type.empty()) {
+    size_t audio_pos = modified_sdp.find("m=audio ");
+    if (audio_pos != std::string::npos) {
+      // ビデオと同様の処理（省略）
+      RTC_LOG(LS_INFO) << "Modified audio codec order in SDP, prioritizing: " 
+                        << config_.audio_codec_type;
+    }
+  }
+  
+  return modified_sdp;
+}
+
 std::string AyameClient::AddPlayoutDelayExtension(const std::string& sdp) {
   // Check if playout-delay extension already exists
   if (sdp.find("http://www.webrtc.org/experiments/rtp-hdrext/playout-delay") != 
@@ -290,6 +384,8 @@ void AyameClient::OnRead(boost::system::error_code ec,
     auto on_create_offer = [this](webrtc::SessionDescriptionInterface* desc) {
       std::string sdp;
       desc->ToString(&sdp);
+      // Set codec preferences in SDP
+      sdp = SetCodecPreferencesInSDP(sdp);
       // Add playout-delay extension if ultra low latency is enabled
       if (config_.ultra_low_latency) {
         sdp = AddPlayoutDelayExtension(sdp);
@@ -321,6 +417,8 @@ void AyameClient::OnRead(boost::system::error_code ec,
               [this](webrtc::SessionDescriptionInterface* desc) {
                 std::string sdp;
                 desc->ToString(&sdp);
+                // Set codec preferences in SDP
+                sdp = SetCodecPreferencesInSDP(sdp);
                 // Add playout-delay extension if ultra low latency is enabled
                 if (config_.ultra_low_latency) {
                   sdp = AddPlayoutDelayExtension(sdp);

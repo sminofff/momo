@@ -31,6 +31,8 @@ struct AyameClientConfig {
   std::string room_id;
   std::string client_id;
   std::string signaling_key;
+  std::string video_codec_type;
+  std::string audio_codec_type;
 };
 
 class AyameClient : public std::enable_shared_from_this<AyameClient>,
@@ -68,6 +70,7 @@ class AyameClient : public std::enable_shared_from_this<AyameClient>,
   void DoSendPong();
   void SetIceServersFromConfig(boost::json::value json_message);
   void CreatePeerConnection();
+  std::string SetCodecPreferencesInSDP(const std::string& sdp);
   std::string AddPlayoutDelayExtension(const std::string& sdp);
 
  private:

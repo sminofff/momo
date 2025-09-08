@@ -75,6 +75,8 @@ struct MomoArgs {
   std::string ayame_room_id;
   std::string ayame_client_id = "";
   std::string ayame_signaling_key = "";
+  std::string ayame_video_codec_type = "";
+  std::string ayame_audio_codec_type = "";
 
   std::string pion_signaling_url;
   std::string pion_video_codec_type = "";  // VP8, VP9, H264, H265, AV1, ALL, or empty for H264 default
