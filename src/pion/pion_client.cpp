@@ -98,18 +98,7 @@ void PionClient::OnConnect(boost::system::error_code ec) {
 
   RTC_LOG(LS_INFO) << __FUNCTION__ << " connected";
 
-  // Send codec info if specified
-  if (!config_.video_codec_type.empty()) {
-    boost::json::object codec_info = {
-        {"videoCodec", config_.video_codec_type}
-    };
-    boost::json::object msg = {
-        {"event", "codecInfo"},
-        {"data", boost::json::serialize(codec_info)}
-    };
-    ws_->WriteText(boost::json::serialize(msg));
-    RTC_LOG(LS_INFO) << "Sent codec info: " << config_.video_codec_type;
-  }
+  // Codec negotiation is handled via SDP, no need to send codecInfo separately
 
   retry_count_ = 0;
   DoRead();
@@ -170,6 +159,194 @@ void PionClient::DoRead() {
   ws_->Read(std::bind(&PionClient::OnRead, shared_from_this(),
                       std::placeholders::_1, std::placeholders::_2,
                       std::placeholders::_3));
+}
+
+std::string PionClient::SetCodecPreferencesInSDP(const std::string& sdp) {
+  std::string modified_sdp = sdp;
+  
+  // ビデオコーデックの優先順位を設定
+  if (!config_.video_codec_type.empty() && config_.video_codec_type != "ALL") {
+    // m=video行を見つける
+    size_t video_pos = modified_sdp.find("m=video ");
+    if (video_pos != std::string::npos) {
+      // m=video行の終わりを見つける
+      size_t line_end = modified_sdp.find("\r\n", video_pos);
+      if (line_end != std::string::npos) {
+        // m=video行を取得
+        std::string m_line = modified_sdp.substr(video_pos, line_end - video_pos);
+        
+        // ペイロードタイプを解析
+        size_t port_end = m_line.find(" ", 8); // "m=video "の後
+        size_t fmt_start = m_line.find(" ", port_end + 1) + 1; // RTP/AVPやRTP/SAVPF等の後
+        std::string formats = m_line.substr(fmt_start);
+        
+        RTC_LOG(LS_INFO) << "Original video payload types: " << formats;
+        
+        // 各ペイロードタイプに対応するコーデックを確認
+        std::vector<std::string> payload_types;
+        std::vector<std::string> preferred_pts;
+        std::vector<std::string> rtx_pts;  // RTXペイロードタイプを別管理
+        std::vector<std::string> other_pts;
+        std::string preferred_rtx;  // 優先コーデック用のRTX
+        
+        size_t pos = 0;
+        while (pos < formats.length()) {
+          size_t space = formats.find(" ", pos);
+          std::string pt = (space == std::string::npos) ? 
+                          formats.substr(pos) : 
+                          formats.substr(pos, space - pos);
+          payload_types.push_back(pt);
+          pos = (space == std::string::npos) ? formats.length() : space + 1;
+        }
+        
+        // 各ペイロードタイプのコーデックを確認
+        for (const auto& pt : payload_types) {
+          std::string rtpmap_line = "a=rtpmap:" + pt + " ";
+          size_t rtpmap_pos = modified_sdp.find(rtpmap_line);
+          if (rtpmap_pos != std::string::npos) {
+            size_t codec_end = modified_sdp.find("/", rtpmap_pos);
+            if (codec_end != std::string::npos) {
+              std::string codec_name = modified_sdp.substr(
+                  rtpmap_pos + rtpmap_line.length(),
+                  codec_end - (rtpmap_pos + rtpmap_line.length()));
+              
+              RTC_LOG(LS_INFO) << "Payload type " << pt << " is codec: " << codec_name;
+              
+              // 指定されたコーデックを最優先
+              if (codec_name == config_.video_codec_type) {
+                preferred_pts.insert(preferred_pts.begin(), pt);
+                
+                // このコーデック用のRTXを探す
+                for (const auto& rtx_pt : payload_types) {
+                  std::string fmtp_line = "a=fmtp:" + rtx_pt + " apt=" + pt;
+                  if (modified_sdp.find(fmtp_line) != std::string::npos) {
+                    preferred_rtx = rtx_pt;
+                    RTC_LOG(LS_INFO) << "Found RTX " << rtx_pt << " for preferred codec " << pt;
+                    break;
+                  }
+                }
+              } else if (codec_name == "rtx") {
+                // RTXは後で適切な位置に配置
+                rtx_pts.push_back(pt);
+              } else {
+                other_pts.push_back(pt);
+              }
+            }
+          } else {
+            other_pts.push_back(pt);
+          }
+        }
+        
+        // 優先ペイロードタイプリストを再構築
+        std::string new_formats;
+        
+        // 1. 優先コーデックを最初に
+        for (const auto& pt : preferred_pts) {
+          if (!new_formats.empty()) new_formats += " ";
+          new_formats += pt;
+        }
+        
+        // 2. 優先コーデック用のRTXを直後に
+        if (!preferred_rtx.empty()) {
+          if (!new_formats.empty()) new_formats += " ";
+          new_formats += preferred_rtx;
+          // rtx_ptsから除外
+          rtx_pts.erase(std::remove(rtx_pts.begin(), rtx_pts.end(), preferred_rtx), rtx_pts.end());
+        }
+        
+        // 3. その他のコーデック
+        for (const auto& pt : other_pts) {
+          if (!new_formats.empty()) new_formats += " ";
+          new_formats += pt;
+        }
+        
+        // 4. 残りのRTX
+        for (const auto& pt : rtx_pts) {
+          if (!new_formats.empty()) new_formats += " ";
+          new_formats += pt;
+        }
+        
+        RTC_LOG(LS_INFO) << "Modified video payload types: " << new_formats;
+        
+        // m=video行を再構築
+        std::string new_m_line = m_line.substr(0, fmt_start) + new_formats;
+        modified_sdp.replace(video_pos, line_end - video_pos, new_m_line);
+        
+        RTC_LOG(LS_INFO) << "Successfully modified video codec order in SDP, prioritizing: " 
+                        << config_.video_codec_type;
+      }
+    }
+  }
+  
+  // オーディオコーデックの優先順位を設定
+  if (!config_.audio_codec_type.empty()) {
+    size_t audio_pos = modified_sdp.find("m=audio ");
+    if (audio_pos != std::string::npos) {
+      size_t line_end = modified_sdp.find("\r\n", audio_pos);
+      if (line_end != std::string::npos) {
+        std::string m_line = modified_sdp.substr(audio_pos, line_end - audio_pos);
+        
+        size_t port_end = m_line.find(" ", 8);
+        size_t fmt_start = m_line.find(" ", port_end + 1) + 1;
+        std::string formats = m_line.substr(fmt_start);
+        
+        std::vector<std::string> payload_types;
+        std::vector<std::string> preferred_pts;
+        std::vector<std::string> other_pts;
+        
+        size_t pos = 0;
+        while (pos < formats.length()) {
+          size_t space = formats.find(" ", pos);
+          std::string pt = (space == std::string::npos) ? 
+                          formats.substr(pos) : 
+                          formats.substr(pos, space - pos);
+          payload_types.push_back(pt);
+          pos = (space == std::string::npos) ? formats.length() : space + 1;
+        }
+        
+        for (const auto& pt : payload_types) {
+          std::string rtpmap_line = "a=rtpmap:" + pt + " ";
+          size_t rtpmap_pos = modified_sdp.find(rtpmap_line);
+          if (rtpmap_pos != std::string::npos) {
+            size_t codec_end = modified_sdp.find("/", rtpmap_pos);
+            if (codec_end != std::string::npos) {
+              std::string codec_name = modified_sdp.substr(
+                  rtpmap_pos + rtpmap_line.length(),
+                  codec_end - (rtpmap_pos + rtpmap_line.length()));
+              
+              if (codec_name == config_.audio_codec_type) {
+                preferred_pts.insert(preferred_pts.begin(), pt);
+              } else if (codec_name == "telephone-event") {
+                preferred_pts.push_back(pt);
+              } else {
+                other_pts.push_back(pt);
+              }
+            }
+          } else {
+            other_pts.push_back(pt);
+          }
+        }
+        
+        std::string new_formats;
+        for (const auto& pt : preferred_pts) {
+          if (!new_formats.empty()) new_formats += " ";
+          new_formats += pt;
+        }
+        for (const auto& pt : other_pts) {
+          if (!new_formats.empty()) new_formats += " ";
+          new_formats += pt;
+        }
+        
+        std::string new_m_line = m_line.substr(0, fmt_start) + new_formats;
+        modified_sdp.replace(audio_pos, line_end - audio_pos, new_m_line);
+        
+        RTC_LOG(LS_INFO) << "Modified audio codec order in SDP, prioritizing: " 
+                        << config_.audio_codec_type;
+      }
+    }
+  }
+  
+  return modified_sdp;
 }
 
 std::string PionClient::AddPlayoutDelayExtension(const std::string& sdp) {
@@ -292,7 +469,11 @@ void PionClient::OnRead(boost::system::error_code ec,
       return;
     }
     
-    const std::string sdp = offer_json.at("sdp").as_string().c_str();
+    std::string sdp = offer_json.at("sdp").as_string().c_str();
+    
+    // Offer SDPのコーデック優先順位も修正
+    sdp = SetCodecPreferencesInSDP(sdp);
+    RTC_LOG(LS_INFO) << "Modified received offer SDP to prioritize configured codecs";
     
     // 既存の接続がある場合は再ネゴシエーション
     if (connection_) {
@@ -310,6 +491,9 @@ void PionClient::OnRead(boost::system::error_code ec,
               [self](webrtc::SessionDescriptionInterface* desc) {
                 std::string sdp;
                 desc->ToString(&sdp);
+                
+                // Set codec preferences in SDP
+                sdp = self->SetCodecPreferencesInSDP(sdp);
                 
                 // Add playout-delay extension if ultra low latency is enabled
                 if (self->config_.ultra_low_latency) {
@@ -351,6 +535,9 @@ void PionClient::OnRead(boost::system::error_code ec,
             [self](webrtc::SessionDescriptionInterface* desc) {
               std::string sdp;
               desc->ToString(&sdp);
+              
+              // Set codec preferences in SDP
+              sdp = self->SetCodecPreferencesInSDP(sdp);
               
               // Add playout-delay extension if ultra low latency is enabled
               if (self->config_.ultra_low_latency) {

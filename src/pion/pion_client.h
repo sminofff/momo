@@ -25,6 +25,7 @@ struct PionClientConfig {
   bool ultra_low_latency = false;  // Enable ultra low latency mode with playout delay min=0, max=0
   std::string signaling_url;  // ws://host:port/ws or wss://host:port/ws
   std::string video_codec_type = "";  // VP8, VP9, H264, H265, AV1, ALL, or empty for H264 default
+  std::string audio_codec_type = "";  // OPUS, PCMU, PCMA, or empty for default
 };
 
 class PionClient : public std::enable_shared_from_this<PionClient>,
@@ -66,6 +67,7 @@ class PionClient : public std::enable_shared_from_this<PionClient>,
  private:
   void DoRead();
   std::shared_ptr<RTCConnection> CreateRTCConnection();
+  std::string SetCodecPreferencesInSDP(const std::string& sdp);
   std::string AddPlayoutDelayExtension(const std::string& sdp);
 
  private:
