@@ -81,6 +81,8 @@ struct MomoArgs {
   std::string pion_signaling_url;
   std::string pion_video_codec_type = "";  // VP8, VP9, H264, H265, AV1, ALL, or empty for H264 default
   std::string pion_audio_codec_type = "";  // OPUS, PCMU, PCMA, or empty for default
+  int pion_video_bitrate = 0;  // 0 means no limit (kbps)
+  int pion_audio_bitrate = 0;  // 0 means no limit (kbps)
 
   bool disable_echo_cancellation = false;
   bool disable_auto_gain_control = false;

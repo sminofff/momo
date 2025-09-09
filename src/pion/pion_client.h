@@ -26,6 +26,9 @@ struct PionClientConfig {
   std::string signaling_url;  // ws://host:port/ws or wss://host:port/ws
   std::string video_codec_type = "";  // VP8, VP9, H264, H265, AV1, ALL, or empty for H264 default
   std::string audio_codec_type = "";  // OPUS, PCMU, PCMA, or empty for default
+  // 0 の場合ビットレートは制限しない (kbps)
+  int video_bitrate = 0;
+  int audio_bitrate = 0;
 };
 
 class PionClient : public std::enable_shared_from_this<PionClient>,
@@ -69,6 +72,7 @@ class PionClient : public std::enable_shared_from_this<PionClient>,
   std::shared_ptr<RTCConnection> CreateRTCConnection();
   std::string SetCodecPreferencesInSDP(const std::string& sdp);
   std::string AddPlayoutDelayExtension(const std::string& sdp);
+  void SetBitrateParameters();
 
  private:
   void OnConnect(boost::system::error_code ec);

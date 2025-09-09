@@ -97,6 +97,14 @@ void PionClient::OnConnect(boost::system::error_code ec) {
   }
 
   RTC_LOG(LS_INFO) << __FUNCTION__ << " connected";
+  
+  // bitrate設定のログ出力
+  if (config_.video_bitrate > 0) {
+    RTC_LOG(LS_INFO) << "Video bitrate limit: " << config_.video_bitrate << " kbps";
+  }
+  if (config_.audio_bitrate > 0) {
+    RTC_LOG(LS_INFO) << "Audio bitrate limit: " << config_.audio_bitrate << " kbps";
+  }
 
   // Codec negotiation is handled via SDP, no need to send codecInfo separately
 
@@ -159,6 +167,67 @@ void PionClient::DoRead() {
   ws_->Read(std::bind(&PionClient::OnRead, shared_from_this(),
                       std::placeholders::_1, std::placeholders::_2,
                       std::placeholders::_3));
+}
+
+void PionClient::SetBitrateParameters() {
+  // bitrate が設定されていない場合は何もしない
+  if (config_.video_bitrate == 0 && config_.audio_bitrate == 0) {
+    return;
+  }
+
+  auto pc = connection_->GetConnection();
+  if (pc == nullptr) {
+    RTC_LOG(LS_ERROR) << "PeerConnection is null";
+    return;
+  }
+
+  auto transceivers = pc->GetTransceivers();
+  
+  for (auto transceiver : transceivers) {
+    // 送信方向を持たない transceiver はスキップ
+    auto direction = transceiver->direction();
+    if (direction != webrtc::RtpTransceiverDirection::kSendRecv &&
+        direction != webrtc::RtpTransceiverDirection::kSendOnly) {
+      continue;
+    }
+
+    auto sender = transceiver->sender();
+    if (!sender) {
+      continue;
+    }
+
+    auto parameters = sender->GetParameters();
+    bool parameters_modified = false;
+
+    // Video bitrate 設定
+    if (transceiver->media_type() == cricket::MediaType::MEDIA_TYPE_VIDEO && 
+        config_.video_bitrate > 0) {
+      for (auto& encoding : parameters.encodings) {
+        encoding.max_bitrate_bps = config_.video_bitrate * 1000;  // kbps to bps
+        parameters_modified = true;
+      }
+      RTC_LOG(LS_INFO) << "Setting video max bitrate to " 
+                       << config_.video_bitrate << " kbps";
+    }
+    // Audio bitrate 設定
+    else if (transceiver->media_type() == cricket::MediaType::MEDIA_TYPE_AUDIO && 
+             config_.audio_bitrate > 0) {
+      for (auto& encoding : parameters.encodings) {
+        encoding.max_bitrate_bps = config_.audio_bitrate * 1000;  // kbps to bps
+        parameters_modified = true;
+      }
+      RTC_LOG(LS_INFO) << "Setting audio max bitrate to " 
+                       << config_.audio_bitrate << " kbps";
+    }
+
+    if (parameters_modified) {
+      auto error = sender->SetParameters(parameters);
+      if (!error.ok()) {
+        RTC_LOG(LS_ERROR) << "Failed to set bitrate parameters: " 
+                          << error.message();
+      }
+    }
+  }
 }
 
 std::string PionClient::SetCodecPreferencesInSDP(const std::string& sdp) {
@@ -500,6 +569,9 @@ void PionClient::OnRead(boost::system::error_code ec,
                   sdp = self->AddPlayoutDelayExtension(sdp);
                 }
                 
+                // Bitrate パラメータを設定（再ネゴシエーション時）
+                self->SetBitrateParameters();
+                
                 // answer を boost::asio コンテキストで送信
                 boost::asio::post(self->ioc_, [self, sdp]() {
                   // answer を送信（再ネゴシエーション用）
@@ -545,6 +617,9 @@ void PionClient::OnRead(boost::system::error_code ec,
               }
               
               self->manager_->SetParameters();
+              
+              // Bitrate パラメータを設定
+              self->SetBitrateParameters();
               
               boost::asio::post(self->ioc_, [self, sdp]() {
                 if (!self->connection_) {

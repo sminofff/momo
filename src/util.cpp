@@ -343,6 +343,12 @@ void Util::ParseArgs(int argc,
   pion_app->add_option("--audio-codec-type", args.pion_audio_codec_type,
                        "Audio codec type (OPUS, PCMU, PCMA)")
       ->check(CLI::IsMember({"", "OPUS", "PCMU", "PCMA"}));
+  pion_app->add_option("--video-bitrate", args.pion_video_bitrate,
+                       "Video bitrate in kbps (0 means no limit)")
+      ->check(CLI::NonNegativeNumber);
+  pion_app->add_option("--audio-bitrate", args.pion_audio_bitrate,
+                       "Audio bitrate in kbps (0 means no limit)")
+      ->check(CLI::NonNegativeNumber);
   pion_app->add_flag("--ultra-low-latency", args.ultra_low_latency,
                       "Enable ultra low latency mode (set playout delay to min=0, max=0)");
 
