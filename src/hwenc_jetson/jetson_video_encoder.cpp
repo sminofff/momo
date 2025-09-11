@@ -329,7 +329,9 @@ int32_t JetsonVideoEncoder::JetsonConfigure() {
   /* ここに来たということはエンコーダは初期化されている
      初期化されているということは設定するべきは調整されたレートではなく
      最初の目標値であるべき BitrateAdjuster も初期化する*/
-  bitrate_adjuster_.reset(new webrtc::BitrateAdjuster(.5, .95));
+  // 保守的な値(0.7, 0.9)に設定してビットレート変動を抑制
+  // 変動範囲を目標値の70%〜90%に制限することでエンコーダーリセット頻度を削減
+  bitrate_adjuster_.reset(new webrtc::BitrateAdjuster(.7, .9));
   bitrate_adjuster_->SetTargetBitrateBps(target_bitrate_bps_);
   SetBitrateBps(target_bitrate_bps_);
 
@@ -651,10 +653,22 @@ void JetsonVideoEncoder::SetRates(const RateControlParameters& parameters) {
   if (parameters.bitrate.get_sum_bps() <= 0 || parameters.framerate_fps <= 0)
     return;
 
+  uint32_t new_bitrate = parameters.bitrate.get_sum_bps();
+  
+  // 変動が3%未満の場合はログ出力もスキップして処理負荷を軽減
+  if (target_bitrate_bps_ > 0) {
+    int32_t diff = std::abs(static_cast<int32_t>(new_bitrate - target_bitrate_bps_));
+    if (diff < target_bitrate_bps_ * 0.03) {  // 3%閾値
+      // フレームレートのみ更新（bitrateの微小変動は無視）
+      framerate_ = parameters.framerate_fps;
+      return;
+    }
+  }
+
   RTC_LOG(LS_INFO) << __FUNCTION__ << " framerate:" << parameters.framerate_fps
                    << " bitrate:" << parameters.bitrate.ToString();
   framerate_ = parameters.framerate_fps;
-  target_bitrate_bps_ = parameters.bitrate.get_sum_bps();
+  target_bitrate_bps_ = new_bitrate;
 
   bitrate_adjuster_->SetTargetBitrateBps(target_bitrate_bps_);
   return;
@@ -677,6 +691,15 @@ void JetsonVideoEncoder::SetBitrateBps(uint32_t bitrate_bps) {
                                configured_framerate_ == framerate_)) {
     return;
   }
+  
+  // 変動が3%未満の場合は変更をスキップしてエンコーダーの安定性を優先
+  if (configured_bitrate_bps_ > 0) {
+    int32_t diff = std::abs(static_cast<int32_t>(bitrate_bps - configured_bitrate_bps_));
+    if (diff < configured_bitrate_bps_ * 0.03) {  // 3%閾値
+      return;
+    }
+  }
+  
   configured_bitrate_bps_ = bitrate_bps;
 
   // VP9 の setBitrate は、設定されたフレームレートを見ずに
