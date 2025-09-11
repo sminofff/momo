@@ -655,10 +655,10 @@ void JetsonVideoEncoder::SetRates(const RateControlParameters& parameters) {
 
   uint32_t new_bitrate = parameters.bitrate.get_sum_bps();
   
-  // 変動が3%未満の場合はログ出力もスキップして処理負荷を軽減
+  // 変動が20%未満の場合はログ出力もスキップして処理負荷を軽減
   if (target_bitrate_bps_ > 0) {
     int32_t diff = std::abs(static_cast<int32_t>(new_bitrate - target_bitrate_bps_));
-    if (diff < target_bitrate_bps_ * 0.03) {  // 3%閾値
+    if (diff < target_bitrate_bps_ * 0.20) {  // 20%閾値
       // フレームレートのみ更新（bitrateの微小変動は無視）
       framerate_ = parameters.framerate_fps;
       return;
