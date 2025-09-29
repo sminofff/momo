@@ -730,8 +730,9 @@ webrtc::VideoEncoder::EncoderInfo JetsonVideoEncoder::GetEncoderInfo() const {
     info.scaling_settings = VideoEncoder::ScalingSettings(kLowH264QpThreshold,
                                                           kHighH264QpThreshold);
   } else if (codec_.codecType == webrtc::kVideoCodecVP8) {
-    static const int kLowVp8QpThreshold = 29;
-    static const int kHighVp8QpThreshold = 95;
+    // VP9と同様に実質無効化（QP値150-151は実際には到達しない範囲）
+    static const int kLowVp8QpThreshold = 150;
+    static const int kHighVp8QpThreshold = 151;
     info.scaling_settings =
         VideoEncoder::ScalingSettings(kLowVp8QpThreshold, kHighVp8QpThreshold);
   } else if (codec_.codecType == webrtc::kVideoCodecVP9) {
